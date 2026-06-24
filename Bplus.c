@@ -1,613 +1,986 @@
 #include "Bplus.h"
 
-#include <stdio.h>
-#include <stdlib.h>
+// Estrutura interna para salvar no offset 0 do arquivo
+typedef struct {
+    long offset_raiz;         // Onde a raiz está armazenada
+    size_t tamanho_chave;     // Tamanho da chave em bytes
+    size_t tamanho_registro;  // Tamanho do registro em bytes
+} CabecalhoArquivo;
 
+// Estrutura auxiliar para a subida recursiva (deve ir para o topo do Bplus.c)
+typedef struct {
+    bool promoveu;
+    long offset_novo_no;
+    void *chave_promovida; // Ponteiro genérico para a chave que subiu
+} ResultadoInsercao;
 
-No* criarNo(int folha) {
-    No* novo = (No*) malloc(sizeof(No));
-    novo->folha = folha;
-    novo->n = 0;
-    novo->prox = NULL;
+// =======================================================
+// Lógica de Leitura Física (Disco -> RAM)
+// =======================================================
+void ler_no(ArvoreBPlus *arvore, long offset, CabecalhoNo *cabecalho, void *chaves, void *dados, long *filhos) {
+    // 1. Posiciona o "leitor" do arquivo no byte exato (offset) a partir do início (SEEK_SET)
+    fseek(arvore->arquivo, offset, SEEK_SET);
 
-    for(int i = 0; i < P + 1; i++)
-        novo->filhos[i] = NULL;
-    return novo;
+    // 2. Lê o cabeçalho (que tem tamanho fixo)
+    fread(cabecalho, sizeof(CabecalhoNo), 1, arvore->arquivo);
+
+    // 3. Lê os blocos genéricos de chaves e dados
+    // Lemos 'P' elementos do tamanho que foi configurado na árvore
+    fread(chaves, arvore->tamanho_chave, P, arvore->arquivo);
+    
+    // Lê os dados (registros). Se for um nó interno, isso pode ser lixo de memória, 
+    // mas lemos mesmo assim para manter a simetria do bloco no disco.
+    fread(dados, arvore->tamanho_registro, P, arvore->arquivo);
+
+    // 4. Lê os ponteiros (offsets) para os filhos
+    fread(filhos, sizeof(long), P + 1, arvore->arquivo);
 }
 
-int validarArvore(No* raiz){
-    return validarArvoreRec(raiz, 1);
+// =======================================================
+// Lógica de Escrita Física (RAM -> Disco)
+// =======================================================
+void gravar_no(ArvoreBPlus *arvore, long offset, CabecalhoNo *cabecalho, void *chaves, void *dados, long *filhos) {
+    // 1. Posiciona o "gravador" do arquivo no byte exato
+    fseek(arvore->arquivo, offset, SEEK_SET);
+
+    // 2. Grava o cabeçalho
+    fwrite(cabecalho, sizeof(CabecalhoNo), 1, arvore->arquivo);
+
+    // 3. Grava as chaves e os dados
+    fwrite(chaves, arvore->tamanho_chave, P, arvore->arquivo);
+    fwrite(dados, arvore->tamanho_registro, P, arvore->arquivo);
+
+    // 4. Grava os offsets dos filhos
+    fwrite(filhos, sizeof(long), P + 1, arvore->arquivo);
+
+    // 5. Força o sistema operacional a descarregar o buffer pro disco físico imediatamente
+    fflush(arvore->arquivo);
 }
 
-int validarArvoreRec(No* no, int ehRaiz) {
+ArvoreBPlus* criar_arvore(const char *nome_arquivo, size_t tam_chave, size_t tam_registro, ComparaChaveFunc func_compara) {
+    ArvoreBPlus *arvore = (ArvoreBPlus*) malloc(sizeof(ArvoreBPlus));
+    if (!arvore) return NULL;
 
-    if (no == NULL)
-        return 1;
+    arvore->tamanho_chave = tam_chave;
+    arvore->tamanho_registro = tam_registro;
+    arvore->compara = func_compara;
 
-    int max = no->folha ? PFOLHA : P - 1;
-    int min = no->folha ? (PFOLHA + 1) / 2 : (P + 1) / 2 - 1;
+    // 1. Tenta abrir o arquivo no modo de leitura e escrita binária ("rb+")
+    // Este modo exige que o arquivo já exista.
+    arvore->arquivo = fopen(nome_arquivo, "rb+");
 
-    // Verifica máximo
-    if (no->n > max)
-        return 0;
+    if (arvore->arquivo == NULL) {
+        // Se retornou NULL, o arquivo não existe. Vamos criá-lo do zero com "wb+"
+        arvore->arquivo = fopen(nome_arquivo, "wb+");
+        if (arvore->arquivo == NULL) {
+            free(arvore);
+            return NULL;
+        }
 
-    // Verifica mínimo (exceto raiz)
-    if (!ehRaiz && no->n < min)
-        return 0;
+        // Como o arquivo é novo, a árvore está vazia. A raiz inicial não existe (-1).
+        arvore->offset_raiz = -1;
 
-    // Verifica ordem crescente
-    for (int i = 1; i < no->n; i++) {
-        if (no->chaves[i] <= no->chaves[i - 1])
-            return 0;
+        // Cria o cabeçalho do arquivo para salvar no offset 0
+        CabecalhoArquivo cabecalho_file;
+        cabecalho_file.offset_raiz = arvore->offset_raiz;
+        cabecalho_file.tamanho_chave = arvore->tamanho_chave;
+        cabecalho_file.tamanho_registro = arvore->tamanho_registro;
+
+        // Grava os metadados no início do arquivo
+        fseek(arvore->arquivo, 0, SEEK_SET);
+        fwrite(&cabecalho_file, sizeof(CabecalhoArquivo), 1, arvore->arquivo);
+        fflush(arvore->arquivo);
+    } else {
+        // Se o arquivo já existia, precisamos ler os metadados salvos anteriormente
+        CabecalhoArquivo cabecalho_file;
+        fseek(arvore->arquivo, 0, SEEK_SET);
+        fread(&cabecalho_file, sizeof(CabecalhoArquivo), 1, arvore->arquivo);
+
+        // Restaura o estado da árvore a partir do disco
+        arvore->offset_raiz = cabecalho_file.offset_raiz;
+        // Opcional: Validar se os tamanhos passados coincidem com os do arquivo
+        arvore->tamanho_chave = cabecalho_file.tamanho_chave;
+        arvore->tamanho_registro = cabecalho_file.tamanho_registro;
     }
 
-    // Se interno, validar filhos
-    if (!no->folha) {
-        for (int i = 0; i <= no->n; i++) {
-            if (no->filhos[i] == NULL)
-                return 0;
+    return arvore;
+}
 
-            if (!validarArvoreRec(no->filhos[i], 0))
-                return 0;
+// =======================================================
+// Fechamento Seguro da Árvore
+// =======================================================
+void fechar_arvore(ArvoreBPlus *arvore) {
+    if (arvore == NULL) return;
+
+    if (arvore->arquivo != NULL) {
+        // Antes de fechar, atualiza o offset da raiz no início do arquivo
+        // garantindo que qualquer alteração de raiz foi salva.
+        CabecalhoArquivo cabecalho_file;
+        cabecalho_file.offset_raiz = arvore->offset_raiz;
+        cabecalho_file.tamanho_chave = arvore->tamanho_chave;
+        cabecalho_file.tamanho_registro = arvore->tamanho_registro;
+
+        fseek(arvore->arquivo, 0, SEEK_SET);
+        fwrite(&cabecalho_file, sizeof(CabecalhoArquivo), 1, arvore->arquivo);
+        fflush(arvore->arquivo);
+
+        fclose(arvore->arquivo);
+    }
+
+    free(arvore);
+}
+
+// =======================================================
+// Alocação de Espaço Físico para um Novo Nó
+// =======================================================
+long alocar_novo_no(ArvoreBPlus *arvore, int eh_folha) {
+    // 1. Move o ponteiro para o fim do ficheiro para determinar o novo offset
+    fseek(arvore->arquivo, 0, SEEK_END);
+    long offset_novo = ftell(arvore->arquivo);
+
+    // 2. Inicializa o cabeçalho do nó
+    CabecalhoNo cabecalho;
+    cabecalho.folha = eh_folha;
+    cabecalho.n = 0;
+    cabecalho.offset_pai = -1;
+    cabecalho.offset_prox_folha = -1;
+
+    // 3. Aloca buffers temporários na RAM zerados para criar a estrutura no disco
+    void *chaves = calloc(P, arvore->tamanho_chave);
+    void *dados = calloc(P, arvore->tamanho_registro);
+    long *filhos = (long*) calloc(P + 1, sizeof(long));
+
+    // Inicializa os ponteiros de filhos com -1 (nulo em disco)
+    for (int i = 0; i <= P; i++) {
+        filhos[i] = -1;
+    }
+
+    // 4. Grava o nó estruturado e vazio no final do ficheiro
+    gravar_no(arvore, offset_novo, &cabecalho, chaves, dados, filhos);
+
+    // 5. Liberta a memória RAM temporária de paginação
+    free(chaves);
+    free(dados);
+    free(filhos);
+
+    return offset_novo;
+}
+
+// =======================================================
+// Pesquisa Genérica por Igualdade
+// =======================================================
+bool buscar_registro(ArvoreBPlus *arvore, void *chave, void *registro_retorno) {
+    // Se a árvore estiver vazia, a busca falha imediatamente
+    if (arvore->offset_raiz == -1) {
+        return false;
+    }
+
+    long offset_atual = arvore->offset_raiz;
+
+    // Alocação de memória na RAM estritamente como área de paginação temporária 
+    CabecalhoNo cabecalho;
+    void *chaves = malloc(P * arvore->tamanho_chave);
+    void *dados = malloc(P * arvore->tamanho_registro);
+    long *filhos = (long*) malloc((P + 1) * sizeof(long));
+
+    bool encontrado = false;
+
+    // Desce na estrutura da árvore indexada até atingir um nó folha
+    while (offset_atual != -1) {
+        ler_no(arvore, offset_atual, &cabecalho, chaves, dados, filhos);
+
+        if (cabecalho.folha) {
+            // Percorre as chaves do nó folha à procura de uma correspondência exata
+            for (int i = 0; i < cabecalho.n; i++) {
+                // Calcula o endereço de memória da chave atual baseado no offset de bytes
+                void *chave_atual = (char*)chaves + (i * arvore->tamanho_chave);
+
+                // Utiliza o callback para fazer a comparação genérica [cite: 70]
+                if (arvore->compara(chave, chave_atual) == 0) {
+                    // Copia o registo correspondente encontrado para o parâmetro de retorno
+                    void *dado_encontrado = (char*)dados + (i * arvore->tamanho_registro);
+                    memcpy(registro_retorno, dado_encontrado, arvore->tamanho_registro);
+                    encontrado = true;
+                    break;
+                }
+            }
+            // Finaliza a pesquisa pois chegou ao nível folha
+            break; 
+        } else {
+            // Nó Interno: Encontra o ponteiro (filho) correto para descer
+            int pos = 0;
+            while (pos < cabecalho.n) {
+                void *chave_atual = (char*)chaves + (pos * arvore->tamanho_chave);
+                
+                if (arvore->compara(chave, chave_atual) >= 0) {
+                    pos++;
+                } else {
+                    break;
+                }
+            }
+            // Atualiza o offset para carregar o nó do próximo nível na próxima iteração
+            offset_atual = filhos[pos];
         }
     }
 
-    return 1;
+    // Liberta a página da RAM antes de retornar o resultado 
+    free(chaves);
+    free(dados);
+    free(filhos);
+
+    return encontrado;
 }
 
-int encontrarPosicao(No* no, int chave) {
-    int i = 0;
+// =======================================================
+// Inserção em Nó Folha com tratamento de Overflow (Cisão)
+// =======================================================
+ResultadoInsercao inserir_em_folha(ArvoreBPlus *arvore, long offset_folha, void *chave_nova, void *registro_novo) {
+    ResultadoInsercao res;
+    res.promoveu = false;
+    res.offset_novo_no = -1;
+    // Aloca o buffer para guardar a cópia da chave que subirá (se houver split)
+    res.chave_promovida = malloc(arvore->tamanho_chave); 
 
-    while (i < no->n && chave >= no->chaves[i]){
-        i++;
+    CabecalhoNo cabecalho;
+    
+    // TRUQUE: Alocamos PFOLHA + 1 na RAM para fazer o overflow temporário de forma limpa!
+    void *chaves = malloc((PFOLHA + 1) * arvore->tamanho_chave); 
+    void *dados = malloc((PFOLHA + 1) * arvore->tamanho_registro);
+    long *filhos = malloc((P + 1) * sizeof(long));
+
+    // 1. Carrega o nó folha do disco para a RAM
+    ler_no(arvore, offset_folha, &cabecalho, chaves, dados, filhos);
+
+    // 2. Encontra a posição correta mantendo a ordenação (Insertion Sort genérico)
+    int pos = cabecalho.n - 1;
+    while (pos >= 0) {
+        void *chave_atual = (char*)chaves + (pos * arvore->tamanho_chave);
+        
+        // Se a chave atual for MAIOR que a nova, arrasta atual para a direita
+        if (arvore->compara(chave_atual, chave_nova) > 0) {
+            void *dest_chave = (char*)chaves + ((pos + 1) * arvore->tamanho_chave);
+            memcpy(dest_chave, chave_atual, arvore->tamanho_chave);
+
+            void *dado_atual = (char*)dados + (pos * arvore->tamanho_registro);
+            void *dest_dado = (char*)dados + ((pos + 1) * arvore->tamanho_registro);
+            memcpy(dest_dado, dado_atual, arvore->tamanho_registro);
+            
+            pos--;
+        } else {
+            break; // Achou a posição!
+        }
     }
-    return i;
-}
+    
+    // 3. Insere a nova chave e o novo dado na posição encontrada
+    pos++;
+    memcpy((char*)chaves + (pos * arvore->tamanho_chave), chave_nova, arvore->tamanho_chave);
+    memcpy((char*)dados + (pos * arvore->tamanho_registro), registro_novo, arvore->tamanho_registro);
+    cabecalho.n++;
 
-No* buscarFolha(No* raiz, int chave) {
-    if (raiz == NULL)
-        return NULL;
-
-    if (raiz->folha)
-        return raiz;
-
-    int pos = encontrarPosicao(raiz, chave);
-
-    return buscarFolha(raiz->filhos[pos], chave);
-}
-
-int buscar(No* raiz, int chave) {
-    No* folha = buscarFolha(raiz, chave);
-
-    if (folha == NULL)
-        return 0;
-
-    for (int i = 0; i < folha->n; i++) {
-        if (folha->chaves[i] == chave)
-            return 1;
+    // 4. VERIFICAÇÃO DE OVERFLOW
+    if (cabecalho.n <= PFOLHA) {
+        // Sem overflow. Apenas sobrescreve o nó atual no disco com o dado novo.
+        gravar_no(arvore, offset_folha, &cabecalho, chaves, dados, filhos);
+        free(chaves); free(dados); free(filhos);
+        return res;
     }
 
-    return 0;
-}
+    // 5. OCORREU OVERFLOW: HORA DO CISALHAMENTO (SPLIT)
+    int meio = cabecalho.n / 2;
+    
+    // Cria fisicamente um novo nó folha no final do arquivo e pega o offset dele
+    long offset_nova_folha = alocar_novo_no(arvore, 1);
+    
+    CabecalhoNo cab_nova_folha;
+    void *chaves_nova = malloc(PFOLHA * arvore->tamanho_chave);
+    void *dados_nova = malloc(PFOLHA * arvore->tamanho_registro);
+    long *filhos_nova = malloc((P + 1) * sizeof(long));
+    ler_no(arvore, offset_nova_folha, &cab_nova_folha, chaves_nova, dados_nova, filhos_nova);
 
-void buscarIntervalo(No* raiz, int inicio, int fim) {
-    No* folha = buscarFolha(raiz, inicio);
-    if (folha == NULL) {
-        printf("Nenhuma chave encontrada no intervalo.\n");
-        return;
+    // 6. Transfere a metade direita dos dados para a nova folha
+    int n_transferidos = cabecalho.n - meio;
+    for (int i = 0; i < n_transferidos; i++) {
+        void *origem_chave = (char*)chaves + ((meio + i) * arvore->tamanho_chave);
+        void *dest_chave = (char*)chaves_nova + (i * arvore->tamanho_chave);
+        memcpy(dest_chave, origem_chave, arvore->tamanho_chave);
+
+        void *origem_dado = (char*)dados + ((meio + i) * arvore->tamanho_registro);
+        void *dest_dado = (char*)dados_nova + (i * arvore->tamanho_registro);
+        memcpy(dest_dado, origem_dado, arvore->tamanho_registro);
     }
 
-    No* atual = folha;
-    int encontrou = 0;
-    printf("Valores no intervalo [%d, %d]: ", inicio, fim);
-    while (atual != NULL) {
-        for (int i = 0; i < atual->n; i++) {
-            if (atual->chaves[i] >= inicio && atual->chaves[i] <= fim) {
-                printf("%d ", atual->chaves[i]);
-                encontrou = 1;
-            } else if (atual->chaves[i] > fim) {
-                printf("\n");
-                return;
+    // Atualiza as contagens
+    cab_nova_folha.n = n_transferidos;
+    cabecalho.n = meio;
+
+    // 7. Reajusta a Lista Encadeada das Folhas (Para a Busca por Intervalo)
+    cab_nova_folha.offset_prox_folha = cabecalho.offset_prox_folha;
+    cabecalho.offset_prox_folha = offset_nova_folha;
+
+    // 8. Define o pacote de promoção para o Pai
+    // Em árvores B+, a folha promove uma CÓPIA do seu primeiro elemento novo
+    memcpy(res.chave_promovida, chaves_nova, arvore->tamanho_chave);
+    res.promoveu = true;
+    res.offset_novo_no = offset_nova_folha;
+
+    // 9. Salva o estado atualizado dos DOIS nós no disco
+    gravar_no(arvore, offset_folha, &cabecalho, chaves, dados, filhos);
+    gravar_no(arvore, offset_nova_folha, &cab_nova_folha, chaves_nova, dados_nova, filhos_nova);
+
+    // Libera a área temporária da RAM
+    free(chaves); free(dados); free(filhos);
+    free(chaves_nova); free(dados_nova); free(filhos_nova);
+
+    return res;
+}
+
+// =======================================================
+// Inserção em Nó Interno com tratamento de Overflow (Cisão)
+// =======================================================
+ResultadoInsercao inserir_em_interno(ArvoreBPlus *arvore, long offset_interno, void *chave_promovida_filho, long offset_filho_dir) {
+    ResultadoInsercao res;
+    res.promoveu = false;
+    res.offset_novo_no = -1;
+    res.chave_promovida = malloc(arvore->tamanho_chave);
+
+    CabecalhoNo cabecalho;
+    // Espaço estendido na RAM (P chaves e P+1 filhos) para overflow temporário
+    void *chaves = malloc((P) * arvore->tamanho_chave);
+    void *dados = malloc((P) * arvore->tamanho_registro); // Nós internos não usam dados, mas mantemos o alinhamento
+    long *filhos = malloc((P + 2) * sizeof(long));
+
+    ler_no(arvore, offset_interno, &cabecalho, chaves, dados, filhos);
+
+    // 1. Encontra a posição correta para inserir a chave que subiu do filho
+    int pos = cabecalho.n - 1;
+    while (pos >= 0) {
+        void *chave_atual = (char*)chaves + (pos * arvore->tamanho_chave);
+        
+        if (arvore->compara(chave_atual, chave_promovida_filho) > 0) {
+            memcpy((char*)chaves + ((pos + 1) * arvore->tamanho_chave), chave_atual, arvore->tamanho_chave);
+            filhos[pos + 2] = filhos[pos + 1];
+            pos--;
+        } else {
+            break;
+        }
+    }
+    
+    pos++;
+    memcpy((char*)chaves + (pos * arvore->tamanho_chave), chave_promovida_filho, arvore->tamanho_chave);
+    filhos[pos + 1] = offset_filho_dir;
+    cabecalho.n++;
+
+    // 2. Verifica se o nó interno estourou o limite legal (P - 1 chaves)
+    if (cabecalho.n <= P - 1) {
+        gravar_no(arvore, offset_interno, &cabecalho, chaves, dados, filhos);
+        free(chaves); free(dados); free(filhos);
+        return res;
+    }
+
+    // 3. OCORREU OVERFLOW INTERNO: HORA DO SPLIT
+    int meio = cabecalho.n / 2; // Índice da chave que vai subir para o pai
+    
+    // Aloca um novo nó interno no arquivo
+    long offset_novo_interno = alocar_novo_no(arvore, 0);
+    
+    CabecalhoNo cab_novo;
+    void *chaves_novo = malloc(P * arvore->tamanho_chave);
+    void *dados_novo = malloc(P * arvore->tamanho_registro);
+    long *filhos_novo = malloc((P + 1) * sizeof(long));
+    ler_no(arvore, offset_novo_interno, &cab_novo, chaves_novo, dados_novo, filhos_novo);
+
+    // A chave do meio é salva para ser promovida
+    memcpy(res.chave_promovida, (char*)chaves + (meio * arvore->tamanho_chave), arvore->tamanho_chave);
+
+    // 4. Move os elementos da direita (após o meio) para o novo nó interno
+    int j = 0;
+    for (int i = meio + 1; i < cabecalho.n; i++) {
+        memcpy((char*)chaves_novo + (j * arvore->tamanho_chave), (char*)chaves + (i * arvore->tamanho_chave), arvore->tamanho_chave);
+        filhos_novo[j] = filhos[i];
+        j++;
+    }
+    filhos_novo[j] = filhos[cabecalho.n]; // Move o último ponteiro de filho
+
+    cab_novo.n = j;
+    cabecalho.n = meio; // O nó antigo perde a metade direita e a própria chave do meio
+
+    cab_novo.offset_pai = cabecalho.offset_pai;
+    res.promoveu = true;
+    res.offset_novo_no = offset_novo_interno;
+
+    // 5. Salva os nós modificados no arquivo
+    gravar_no(arvore, offset_interno, &cabecalho, chaves, dados, filhos);
+    gravar_no(arvore, offset_novo_interno, &cab_novo, chaves_novo, dados_novo, filhos_novo);
+
+    // 6. ATUALIZAÇÃO DOS PONTEIROS DE PAI NO DISCO
+    // Como mudamos os filhos de lugar, precisamos avisar a esses filhos quem é o novo pai deles
+    for (int i = 0; i <= cab_novo.n; i++) {
+        long off_filho = filhos_novo[i];
+        if (off_filho != -1) {
+            CabecalhoNo cab_filho;
+            void *ch_f = malloc(arvore->tamanho_chave * P);
+            void *d_f = malloc(arvore->tamanho_registro * P);
+            long *fi_f = malloc(sizeof(long) * (P + 1));
+            
+            ler_no(arvore, off_filho, &cab_filho, ch_f, d_f, fi_f);
+            cab_filho.offset_pai = offset_novo_interno;
+            gravar_no(arvore, off_filho, &cab_filho, ch_f, d_f, fi_f);
+            
+            free(ch_f); free(d_f); free(fi_f);
+        }
+    }
+
+    free(chaves); free(dados); free(filhos);
+    free(chaves_novo); free(dados_novo); free(filhos_novo);
+
+    return res;
+}
+
+// Protótipo interno da função recursiva
+ResultadoInsercao inserir_rec(ArvoreBPlus *arvore, long offset_atual, void *chave, void *registro);
+
+ResultadoInsercao inserir_rec(ArvoreBPlus *arvore, long offset_atual, void *chave, void *registro) {
+    CabecalhoNo cabecalho;
+    // Buffers temporários apenas para ler o nó e decidir o caminho
+    void *chaves = malloc(P * arvore->tamanho_chave);
+    void *dados = malloc(P * arvore->tamanho_registro);
+    long *filhos = malloc((P + 1) * sizeof(long));
+
+    ler_no(arvore, offset_atual, &cabecalho, chaves, dados, filhos);
+
+    // Se alcançou uma folha, delega a inserção física nela
+    if (cabecalho.folha) {
+        free(chaves); free(dados); free(filhos);
+        return inserir_em_folha(arvore, offset_atual, chave, registro);
+    }
+
+    // Se for nó interno, encontra o ponteiro de disco correto para descer
+    int pos = 0;
+    while (pos < cabecalho.n) {
+        void *chave_atual = (char*)chaves + (pos * arvore->tamanho_chave);
+        if (arvore->compara(chave, chave_atual) >= 0) {
+            pos++;
+        } else {
+            break;
+        }
+    }
+
+    long offset_filho = filhos[pos];
+    free(chaves); free(dados); free(filhos);
+
+    // Desce recursivamente para o próximo nível do arquivo
+    ResultadoInsercao res_filho = inserir_rec(arvore, offset_filho, chave, registro);
+
+    // Se o filho não dividiu, apenas repassa o resultado para cima terminando o fluxo
+    if (!res_filho.promoveu) {
+        return res_filho;
+    }
+
+    // Se o filho dividiu, precisamos inserir a chave promovida no nó interno atual
+    ResultadoInsercao res_atual = inserir_em_interno(arvore, offset_atual, res_filho.chave_promovida, res_filho.offset_novo_no);
+    free(res_filho.chave_promovida);
+    
+    return res_atual;
+}
+
+// =======================================================
+// Interface Pública de Inserção da Árvore B+
+// =======================================================
+bool inserir_registro(ArvoreBPlus *arvore, void *chave, void *registro) {
+    // CASO 1: Árvore totalmente vazia (Criação da primeira raiz)
+    if (arvore->offset_raiz == -1) {
+        long offset_raiz = alocar_novo_no(arvore, 1); // Aloca uma folha
+        
+        CabecalhoNo cabecalho;
+        void *chaves = malloc(P * arvore->tamanho_chave);
+        void *dados = malloc(P * arvore->tamanho_registro);
+        long *filhos = malloc((P + 1) * sizeof(long));
+        
+        ler_no(arvore, offset_raiz, &cabecalho, chaves, dados, filhos);
+        
+        // Insere o primeiro elemento no início dos blocos de memória
+        memcpy(chaves, chave, arvore->tamanho_chave);
+        memcpy(dados, registro, arvore->tamanho_registro);
+        cabecalho.n = 1;
+        
+        gravar_no(arvore, offset_raiz, &cabecalho, chaves, dados, filhos);
+        arvore->offset_raiz = offset_raiz; // Atualiza o controle na RAM
+        
+        free(chaves); free(dados); free(filhos);
+        return true;
+    }
+
+    // CASO 2: A árvore já possui nós. Dispara a recursão de disco.
+    ResultadoInsercao res = inserir_rec(arvore, arvore->offset_raiz, chave, registro);
+
+    // Se a raiz antiga sofreu divisão, a árvore precisa crescer um nível para cima
+    if (res.promoveu) {
+        long offset_nova_raiz = alocar_novo_no(arvore, 0); // Nova raiz sempre interna
+        
+        CabecalhoNo cab_raiz;
+        void *chaves_raiz = malloc(P * arvore->tamanho_chave);
+        void *dados_raiz = malloc(P * arvore->tamanho_registro);
+        long *filhos_raiz = malloc((P + 1) * sizeof(long));
+        ler_no(arvore, offset_nova_raiz, &cab_raiz, chaves_raiz, dados_raiz, filhos_raiz);
+
+        cab_raiz.n = 1;
+        memcpy(chaves_raiz, res.chave_promovida, arvore->tamanho_chave);
+        filhos_raiz[0] = arvore->offset_raiz; // Filho esquerdo é a raiz antiga
+        filhos_raiz[1] = res.offset_novo_no;  // Filho direito é o nó gerado no split
+
+        gravar_no(arvore, offset_nova_raiz, &cab_raiz, chaves_raiz, dados_raiz, filhos_raiz);
+
+        // Atualiza o ponteiro de pai nos dois nós filhos que agora estão abaixo da nova raiz
+        long offsets_filhos[2] = {arvore->offset_raiz, res.offset_novo_no};
+        for (int i = 0; i < 2; i++) {
+            CabecalhoNo cab_f;
+            void *ch_f = malloc(arvore->tamanho_chave * P);
+            void *d_f = malloc(arvore->tamanho_registro * P);
+            long *fi_f = malloc(sizeof(long) * (P + 1));
+            
+            ler_no(arvore, offsets_filhos[i], &cab_f, ch_f, d_f, fi_f);
+            cab_f.offset_pai = offset_nova_raiz;
+            gravar_no(arvore, offsets_filhos[i], &cab_f, ch_f, d_f, fi_f);
+            
+            free(ch_f); free(d_f); free(fi_f);
+        }
+
+        // Aponta o controle da árvore para a nova raiz
+        arvore->offset_raiz = offset_nova_raiz;
+        free(res.chave_promovida);
+        free(chaves_raiz); free(dados_raiz); free(filhos_raiz);
+    }
+
+    return true;
+}
+
+// =======================================================
+// Busca por Intervalo (Lista Encadeada de Folhas)
+// =======================================================
+void buscar_intervalo(ArvoreBPlus *arvore, void *chave_inicio, void *chave_fim, ProcessaRegistroFunc processar) {
+    if (arvore->offset_raiz == -1) {
+        return; // Árvore vazia, nada a buscar
+    }
+
+    long offset_atual = arvore->offset_raiz;
+    CabecalhoNo cabecalho;
+    
+    // Aloca a página temporária na RAM
+    void *chaves = malloc(P * arvore->tamanho_chave);
+    void *dados = malloc(P * arvore->tamanho_registro);
+    long *filhos = malloc((P + 1) * sizeof(long));
+
+    // 1. NAVEGAÇÃO VERTICAL: Desce na árvore até achar a folha do limite inferior
+    while (offset_atual != -1) {
+        ler_no(arvore, offset_atual, &cabecalho, chaves, dados, filhos);
+        
+        if (cabecalho.folha) {
+            break; // Chegamos no nível das folhas!
+        } else {
+            int pos = 0;
+            while (pos < cabecalho.n) {
+                void *chave_atual = (char*)chaves + (pos * arvore->tamanho_chave);
+                // Se a chave buscada é maior ou igual, vai para a direita
+                if (arvore->compara(chave_inicio, chave_atual) >= 0) {
+                    pos++;
+                } else {
+                    break;
+                }
+            }
+            offset_atual = filhos[pos];
+        }
+    }
+
+    // 2. NAVEGAÇÃO HORIZONTAL: Varredura linear pelas folhas
+    bool passou_do_fim = false;
+    
+    while (offset_atual != -1 && !passou_do_fim) {
+        // O nó atual já foi lido. Para as iterações seguintes do while, ele lê o próximo.
+        ler_no(arvore, offset_atual, &cabecalho, chaves, dados, filhos);
+        
+        for (int i = 0; i < cabecalho.n; i++) {
+            void *chave_atual = (char*)chaves + (i * arvore->tamanho_chave);
+            
+            // Compara a chave lida do disco com os limites A e B
+            int comp_inicio = arvore->compara(chave_atual, chave_inicio);
+            int comp_fim = arvore->compara(chave_atual, chave_fim);
+            
+            // O requisito pede intervalo ABERTO (Nome A, Nome B)
+            // Ou seja: atual > inicio E atual < fim
+            if (comp_inicio > 0 && comp_fim < 0) {
+                // A chave está dentro do intervalo! 
+                // Calcula o endereço do registro e envia para o callback processar (imprimir)
+                void *dado_atual = (char*)dados + (i * arvore->tamanho_registro);
+                processar(chave_atual, dado_atual);
+            } 
+            else if (comp_fim >= 0) {
+                // Como as chaves estão ordenadas, se a chave atual for maior ou igual
+                // ao limite superior (Nome B), podemos abortar totalmente a busca.
+                passou_do_fim = true;
+                break;
             }
         }
-        atual = atual->prox;
+        
+        // Pula para o próximo bloco físico no HD (A mágica da Árvore B+)
+        offset_atual = cabecalho.offset_prox_folha;
     }
-    if (!encontrou) {
-        printf("Nenhuma chave encontrada.");
-    }
-    printf("\n");
+
+    // Libera a memória de paginação
+    free(chaves);
+    free(dados);
+    free(filhos);
 }
 
-Resultado inserirEmFolha(No* folha, int chave) {
-
-    Resultado res;
-    res.promoveu = 0;
-    res.novoNo = NULL;
-
-    // Inserir ordenado
-    int i = folha->n - 1;
-
-    while (i >= 0 && folha->chaves[i] > chave) {
-        folha->chaves[i + 1] = folha->chaves[i];
-        i--;
-    }
-
-    folha->chaves[i + 1] = chave;
-    folha->n++;
-
-    // Verificar overflow
-    if (folha->n <= PFOLHA){
-        return res;
-    }
-    // SPLIT
-
-    int meio = folha->n / 2;
-
-    No* novaFolha = criarNo(1);
-
-    // mover metade direita
-    for (int j = meio; j < folha->n; j++) {
-        novaFolha->chaves[j - meio] = folha->chaves[j];
-        novaFolha->n++;
-    }
-
-    folha->n = meio;
-
-    // ajustar encadeamento
-    novaFolha->prox = folha->prox;
-    folha->prox = novaFolha;
-
-    // promover primeira chave da direita
-    res.promoveu = 1;
-    res.chavePromovida = novaFolha->chaves[0];
-    res.novoNo = novaFolha;
-
-    return res;
-}
-
-Resultado inserirRec(No* no, int chave) {
-
-    if (no->folha) {
-        return inserirEmFolha(no, chave);
-    }
-
-    Resultado resFilho;
-
-    int pos = encontrarPosicao(no, chave);
-
-    resFilho = inserirRec(no->filhos[pos], chave);
-
-    if (!resFilho.promoveu)
-        return resFilho;
-
-    // Se chegou aqui, filho promoveu
-    // Agora precisamos inserir chavePromovida no nó atual
-
-    // (aqui entra lógica de inserção interna + possível split interno)
-    return inserirEmInterno(no, resFilho.chavePromovida, resFilho.novoNo);
-}
-
-Resultado inserirEmInterno(No* no, int chave, No* novoFilho) {
-
-    Resultado res;
-    res.promoveu = 0;
-    res.novoNo = NULL;
-
-    // Inserir ordenado
-    int i = no->n - 1;
-
-    while (i >= 0 && no->chaves[i] > chave) {
-        no->chaves[i + 1] = no->chaves[i];
-        no->filhos[i + 2] = no->filhos[i + 1];
-        i--;
-    }
-
-    no->chaves[i + 1] = chave;
-    no->filhos[i + 2] = novoFilho;
-    no->n++;
-
-    // Verificar overflow
-    if (no->n <= P - 1)
-        return res;
-
-    // SPLIT INTERNO
-
-    int meio = no->n / 2;
-
-    No* novoInterno = criarNo(0);
-
-    // chave que será promovida
-    res.chavePromovida = no->chaves[meio];
-
-    // mover chaves da direita (exceto a promovida)
-    for (int j = meio + 1; j < no->n; j++) {
-        novoInterno->chaves[j - (meio + 1)] = no->chaves[j];
-        novoInterno->n++;
-    }
-
-    // mover filhos correspondentes
-    for (int j = meio + 1; j <= no->n; j++) {
-        novoInterno->filhos[j - (meio + 1)] = no->filhos[j];
-    }
-
-    no->n = meio;
-
-    res.promoveu = 1;
-    res.novoNo = novoInterno;
-
-    return res;
-}
-
-
-No* inserir(No* raiz, int chave) {
-
-    if (raiz == NULL) {
-        raiz = criarNo(1);
-        raiz->chaves[0] = chave;
-        raiz->n = 1;
-        return raiz;
-    }
-
-    Resultado res = inserirRec(raiz, chave);
-
-    if (!res.promoveu)
-        return raiz;
-
-    // criar nova raiz
-    No* novaRaiz = criarNo(0);
-
-    novaRaiz->chaves[0] = res.chavePromovida;
-    novaRaiz->filhos[0] = raiz;
-    novaRaiz->filhos[1] = res.novoNo;
-    novaRaiz->n = 1;
-
-    return novaRaiz;
-}
-
-
-void imprimirArvore(No* raiz) {
-
-    if (raiz == NULL) {
-        printf("Arvore vazia\n");
+// =======================================================
+// Impressão Hierárquica da Árvore B+ em Disco
+// =======================================================
+void imprimir_arvore(ArvoreBPlus *arvore, ImprimeChaveFunc imprime_chave) {
+    if (arvore->offset_raiz == -1) {
+        printf("A arvore esta vazia no disco.\n");
         return;
     }
 
-    No* fila[100];
+    // Fila simples para armazenar os offsets de cada nível
+    long fila[1000]; 
     int inicio = 0, fim = 0;
+    
+    fila[fim++] = arvore->offset_raiz;
 
-    fila[fim++] = raiz;
+    CabecalhoNo cabecalho;
+    void *chaves = malloc(P * arvore->tamanho_chave);
+    void *dados = malloc(P * arvore->tamanho_registro);
+    long *filhos = malloc((P + 1) * sizeof(long));
+
+    int nivel = 0;
 
     while (inicio < fim) {
+        int tamanho_nivel = fim - inicio;
+        printf("Nivel %d: ", nivel);
 
-        int tamanhoNivel = fim - inicio;
-
-        for (int i = 0; i < tamanhoNivel; i++) {
-
-            No* atual = fila[inicio++];
+        for (int i = 0; i < tamanho_nivel; i++) {
+            long offset_atual = fila[inicio++];
+            ler_no(arvore, offset_atual, &cabecalho, chaves, dados, filhos);
 
             printf("[ ");
-            for (int j = 0; j < atual->n; j++)
-                printf("%d ", atual->chaves[j]);
-            printf("] ");
+            for (int j = 0; j < cabecalho.n; j++) {
+                void *chave_atual = (char*)chaves + (j * arvore->tamanho_chave);
+                
+                // O callback injetado decide como fazer o printf dessa chave
+                imprime_chave(chave_atual); 
+                
+                if (j < cabecalho.n - 1) printf(" | ");
+            }
+            printf(" ]  ");
 
-            if (!atual->folha) {
-                for (int j = 0; j <= atual->n; j++) {
-                    if (atual->filhos[j] != NULL)
-                        fila[fim++] = atual->filhos[j];
+            // Se não for folha, enfileira os offsets dos filhos para o próximo nível
+            if (!cabecalho.folha) {
+                for (int j = 0; j <= cabecalho.n; j++) {
+                    if (filhos[j] != -1) {
+                        fila[fim++] = filhos[j];
+                    }
                 }
             }
         }
-
         printf("\n");
+        nivel++;
     }
+
+    free(chaves); free(dados); free(filhos);
 }
 
-int removerDaFolha(No* folha, int chave) {
+// =======================================================
+// Remoção de Registro em Disco
+// =======================================================
+// =======================================================
+// Remoção de Registro em Disco (Atualizada com Underflow)
+// =======================================================
+bool remover_registro(ArvoreBPlus *arvore, void *chave) {
+    if (arvore->offset_raiz == -1) return false;
 
-    int i;
+    long offset_atual = arvore->offset_raiz;
+    long caminho_pais[100]; // Pilha para guardar a rota de descida
+    int topo = 0;
 
-    for (i = 0; i < folha->n; i++) {
-        if (folha->chaves[i] == chave)
+    CabecalhoNo cabecalho;
+    void *chaves = malloc(P * arvore->tamanho_chave);
+    void *dados = malloc(P * arvore->tamanho_registro);
+    long *filhos = malloc((P + 1) * sizeof(long));
+
+    // 1. Desce na árvore até encontrar a folha correspondente
+    while (true) {
+        ler_no(arvore, offset_atual, &cabecalho, chaves, dados, filhos);
+        
+        if (cabecalho.folha) break;
+        
+        caminho_pais[topo++] = offset_atual; // Empilha o offset do pai
+        
+        int pos = 0;
+        while (pos < cabecalho.n) {
+            void *chave_atual = (char*)chaves + (pos * arvore->tamanho_chave);
+            if (arvore->compara(chave, chave_atual) >= 0) {
+                pos++;
+            } else {
+                break;
+            }
+        }
+        offset_atual = filhos[pos];
+    }
+
+    // 2. Procura a chave exata dentro da folha
+    int pos_remocao = -1;
+    for (int i = 0; i < cabecalho.n; i++) {
+        void *chave_atual = (char*)chaves + (i * arvore->tamanho_chave);
+        if (arvore->compara(chave, chave_atual) == 0) {
+            pos_remocao = i;
             break;
+        }
     }
 
-    if (i == folha->n)
-        return 0; // não encontrou
-
-    for (int j = i; j < folha->n - 1; j++) {
-        folha->chaves[j] = folha->chaves[j + 1];
+    // Se não encontrou a chave na folha, aborta a remoção
+    if (pos_remocao == -1) {
+        free(chaves); free(dados); free(filhos);
+        return false; 
     }
 
-    folha->n--;
+    // 3. Remove arrastando os elementos da direita para a esquerda
+    for (int i = pos_remocao; i < cabecalho.n - 1; i++) {
+        void *dest_chave = (char*)chaves + (i * arvore->tamanho_chave);
+        void *orig_chave = (char*)chaves + ((i + 1) * arvore->tamanho_chave);
+        memcpy(dest_chave, orig_chave, arvore->tamanho_chave);
 
-    return 1;
+        void *dest_dado = (char*)dados + (i * arvore->tamanho_registro);
+        void *orig_dado = (char*)dados + ((i + 1) * arvore->tamanho_registro);
+        memcpy(dest_dado, orig_dado, arvore->tamanho_registro);
+    }
+    cabecalho.n--;
+
+    // 4. Salva a folha modificada no disco
+    gravar_no(arvore, offset_atual, &cabecalho, chaves, dados, filhos);
+
+    // 5. Aciona o gatilho de Underflow, se necessário
+    int minimo_folha = (PFOLHA + 1) / 2;
+    if (cabecalho.n < minimo_folha && offset_atual != arvore->offset_raiz) {
+        // Chama a função recursiva de correção que injetamos anteriormente
+        corrigir_underflow_disco(arvore, offset_atual, caminho_pais, topo);
+    }
+
+    // 6. Verificação pós-remoção do estado da Raiz da árvore
+    // Carregamos a raiz atualizada do disco, pois os merges podem tê-la alterado
+    CabecalhoNo cab_raiz;
+    ler_no(arvore, arvore->offset_raiz, &cab_raiz, chaves, dados, filhos);
+
+    if (cab_raiz.n == 0) {
+        if (cab_raiz.folha) {
+            // A árvore perdeu o seu último elemento
+            arvore->offset_raiz = -1;
+        } else {
+            // A raiz interna sofreu merge e ficou vazia. O primeiro filho assume.
+            long nova_raiz_offset = filhos[0];
+            arvore->offset_raiz = nova_raiz_offset;
+            
+            // Atualiza o cabeçalho do novo nó raiz para indicar que ele não tem pai
+            CabecalhoNo cab_nova_raiz;
+            ler_no(arvore, nova_raiz_offset, &cab_nova_raiz, chaves, dados, filhos);
+            cab_nova_raiz.offset_pai = -1;
+            gravar_no(arvore, nova_raiz_offset, &cab_nova_raiz, chaves, dados, filhos);
+        }
+    }
+
+    // Libera a memória de paginação temporária
+    free(chaves); 
+    free(dados); 
+    free(filhos);
+    
+    return true;
 }
 
-ResultadoRemocao removerRec(No* no, int chave) {
+// =======================================================
+// Correção de Underflow em Disco (Redistribuição e Fusão)
+// =======================================================
+void corrigir_underflow_disco(ArvoreBPlus *arvore, long offset_no, long *caminho_pais, int topo) {
+    // Se chegou na raiz, não há pai nem irmãos para emprestar.
+    // O ajuste da raiz vazia já é tratado na função remover_registro.
+    if (topo == 0) return; 
 
-    ResultadoRemocao res;
-    res.underflow = 0;
+    long offset_pai = caminho_pais[topo - 1];
 
-    // 🔹 CASO FOLHA
-    if (no->folha) {
+    // Alocações para o PAI e para o NÓ ALVO
+    CabecalhoNo cab_pai, cab_no;
+    void *chaves_pai = malloc(P * arvore->tamanho_chave);
+    void *dados_pai = malloc(P * arvore->tamanho_registro);
+    long *filhos_pai = malloc((P + 1) * sizeof(long));
 
-        int removido = removerDaFolha(no, chave);
+    void *chaves_no = malloc(P * arvore->tamanho_chave);
+    void *dados_no = malloc(P * arvore->tamanho_registro);
+    long *filhos_no = malloc((P + 1) * sizeof(long));
 
-        if (!removido) {
-            printf("Chave nao encontrada\n");
-            return res;
-        }
+    ler_no(arvore, offset_pai, &cab_pai, chaves_pai, dados_pai, filhos_pai);
+    ler_no(arvore, offset_no, &cab_no, chaves_no, dados_no, filhos_no);
 
-        int min = (PFOLHA + 1) / 2;
-
-        if (no->n < min)
-            res.underflow = 1;
-
-        return res;
-    }
-
-    // 🔹 CASO INTERNO
-    int pos = encontrarPosicao(no, chave);
-
-    ResultadoRemocao resFilho = removerRec(no->filhos[pos], chave);
-
-        // 👇 Atualização de separador
-    No* filho = no->filhos[pos];
-
-    if (filho->folha && filho->n > 0 && pos > 0) {
-        no->chaves[pos - 1] = filho->chaves[0];
-    }
-
-    if (!resFilho.underflow)
-        return res;
-
-    // corrigir underflow do filho
-    corrigirUnderflow(no, pos);
-
-    int minInterno = (P + 1) / 2 - 1;
-
-    if (no->n < minInterno)
-        res.underflow = 1;
-
-    return res;
-}
-
-int corrigirUnderflow(No* pai, int indiceFilho) {
-
-    No* filho = pai->filhos[indiceFilho];
-
-    No* irmaoEsq = NULL;
-    No* irmaoDir = NULL;
-
-    if (indiceFilho > 0)
-        irmaoEsq = pai->filhos[indiceFilho - 1];
-
-    if (indiceFilho < pai->n)
-        irmaoDir = pai->filhos[indiceFilho + 1];
-
-    /* =======================================================
-       🔹 CASO 1 — FILHO É FOLHA
-    ======================================================= */
-
-    if (filho->folha) {
-
-        int min = (PFOLHA + 1) / 2;
-
-        // 1️⃣ REDISTRIBUIÇÃO COM ESQUERDO
-        if (irmaoEsq && irmaoEsq->n > min) {
-
-            int maior = irmaoEsq->chaves[irmaoEsq->n - 1];
-            irmaoEsq->n--;
-
-            for (int j = filho->n; j > 0; j--)
-                filho->chaves[j] = filho->chaves[j - 1];
-
-            filho->chaves[0] = maior;
-            filho->n++;
-
-            pai->chaves[indiceFilho - 1] = filho->chaves[0];
-
-            return 1;
-        }
-
-        // 2️⃣ REDISTRIBUIÇÃO COM DIREITO
-        if (irmaoDir && irmaoDir->n > min) {
-
-            int menor = irmaoDir->chaves[0];
-
-            for (int j = 0; j < irmaoDir->n - 1; j++)
-                irmaoDir->chaves[j] = irmaoDir->chaves[j + 1];
-
-            irmaoDir->n--;
-
-            filho->chaves[filho->n] = menor;
-            filho->n++;
-
-            pai->chaves[indiceFilho] = irmaoDir->chaves[0];
-
-            return 1;
-        }
-
-        // 3️⃣ MERGE
-        if (irmaoEsq) {
-
-            // esquerdo absorve filho
-            for (int j = 0; j < filho->n; j++)
-                irmaoEsq->chaves[irmaoEsq->n + j] = filho->chaves[j];
-
-            irmaoEsq->n += filho->n;
-            irmaoEsq->prox = filho->prox;
-
-            // remover chave do pai
-            for (int j = indiceFilho - 1; j < pai->n - 1; j++)
-                pai->chaves[j] = pai->chaves[j + 1];
-
-            // remover ponteiro
-            for (int j = indiceFilho; j < pai->n; j++)
-                pai->filhos[j] = pai->filhos[j + 1];
-
-            pai->n--;
-            free(filho);
-
-            return 1;
-        }
-        else if (irmaoDir) {
-
-            // filho absorve direito
-            for (int j = 0; j < irmaoDir->n; j++)
-                filho->chaves[filho->n + j] = irmaoDir->chaves[j];
-
-            filho->n += irmaoDir->n;
-            filho->prox = irmaoDir->prox;
-
-            for (int j = indiceFilho; j < pai->n - 1; j++)
-                pai->chaves[j] = pai->chaves[j + 1];
-
-            for (int j = indiceFilho + 1; j < pai->n; j++)
-                pai->filhos[j] = pai->filhos[j + 1];
-
-            pai->n--;
-            free(irmaoDir);
-
-            return 1;
+    // 1. Descobrir a posição do nó alvo dentro do array de filhos do pai
+    int pos_filho = -1;
+    for (int i = 0; i <= cab_pai.n; i++) {
+        if (filhos_pai[i] == offset_no) {
+            pos_filho = i; 
+            break;
         }
     }
 
-    /* =======================================================
-       🔹 CASO 2 — FILHO É INTERNO
-    ======================================================= */
+    // Identifica os offsets dos irmãos imediatos
+    long offset_esq = (pos_filho > 0) ? filhos_pai[pos_filho - 1] : -1;
+    long offset_dir = (pos_filho < cab_pai.n) ? filhos_pai[pos_filho + 1] : -1;
 
-    else {
+    // Calcula o limite mínimo de chaves
+    int min_chaves = cab_no.folha ? (PFOLHA + 1) / 2 : (P + 1) / 2 - 1;
 
-        int minInterno = (P + 1) / 2 - 1;
+    // Variáveis para carregar os irmãos na RAM, se existirem
+    CabecalhoNo cab_irmao;
+    void *chaves_irmao = malloc(P * arvore->tamanho_chave);
+    void *dados_irmao = malloc(P * arvore->tamanho_registro);
+    long *filhos_irmao = malloc((P + 1) * sizeof(long));
 
-        // 1️⃣ REDISTRIBUIÇÃO ESQUERDO
-        if (irmaoEsq && irmaoEsq->n > minInterno) {
+    bool resolveu = false;
 
-            for (int j = filho->n; j > 0; j--)
-                filho->chaves[j] = filho->chaves[j - 1];
+    // ====================================================================
+    // CASO FOLHA
+    // ====================================================================
+    if (cab_no.folha) {
+        
+        // --- TENTATIVA 1: Emprestar do Irmão Esquerdo ---
+        if (offset_esq != -1) {
+            ler_no(arvore, offset_esq, &cab_irmao, chaves_irmao, dados_irmao, filhos_irmao);
+            
+            if (cab_irmao.n > min_chaves) {
+                // 1. Desloca tudo no nó alvo para a direita para abrir espaço no índice 0
+                for (int i = cab_no.n; i > 0; i--) {
+                    memcpy((char*)chaves_no + (i * arvore->tamanho_chave), (char*)chaves_no + ((i - 1) * arvore->tamanho_chave), arvore->tamanho_chave);
+                    memcpy((char*)dados_no + (i * arvore->tamanho_registro), (char*)dados_no + ((i - 1) * arvore->tamanho_registro), arvore->tamanho_registro);
+                }
 
-            for (int j = filho->n + 1; j > 0; j--)
-                filho->filhos[j] = filho->filhos[j - 1];
+                // 2. Puxa a última chave/dado do irmão esquerdo para a primeira posição do nó alvo
+                int ultimo_esq = cab_irmao.n - 1;
+                memcpy(chaves_no, (char*)chaves_irmao + (ultimo_esq * arvore->tamanho_chave), arvore->tamanho_chave);
+                memcpy(dados_no, (char*)dados_irmao + (ultimo_esq * arvore->tamanho_registro), arvore->tamanho_registro);
+                
+                cab_no.n++;
+                cab_irmao.n--;
 
-            filho->chaves[0] = pai->chaves[indiceFilho - 1];
-            filho->filhos[0] = irmaoEsq->filhos[irmaoEsq->n];
+                // 3. Atualiza o separador no PAI (a nova primeira chave do nó alvo)
+                memcpy((char*)chaves_pai + ((pos_filho - 1) * arvore->tamanho_chave), chaves_no, arvore->tamanho_chave);
 
-            filho->n++;
-
-            pai->chaves[indiceFilho - 1] =
-                irmaoEsq->chaves[irmaoEsq->n - 1];
-
-            irmaoEsq->n--;
-
-            return 1;
+                // 4. Salva no disco
+                gravar_no(arvore, offset_no, &cab_no, chaves_no, dados_no, filhos_no);
+                gravar_no(arvore, offset_esq, &cab_irmao, chaves_irmao, dados_irmao, filhos_irmao);
+                gravar_no(arvore, offset_pai, &cab_pai, chaves_pai, dados_pai, filhos_pai);
+                
+                resolveu = true;
+            }
         }
 
-        // 2️⃣ REDISTRIBUIÇÃO DIREITO
-        if (irmaoDir && irmaoDir->n > minInterno) {
+        // --- TENTATIVA 2: Emprestar do Irmão Direito ---
+        if (!resolveu && offset_dir != -1) {
+            ler_no(arvore, offset_dir, &cab_irmao, chaves_irmao, dados_irmao, filhos_irmao);
+            
+            if (cab_irmao.n > min_chaves) {
+                // 1. Puxa a primeira chave/dado do irmão direito para o final do nó alvo
+                memcpy((char*)chaves_no + (cab_no.n * arvore->tamanho_chave), chaves_irmao, arvore->tamanho_chave);
+                memcpy((char*)dados_no + (cab_no.n * arvore->tamanho_registro), dados_irmao, arvore->tamanho_registro);
+                
+                cab_no.n++;
 
-            filho->chaves[filho->n] =
-                pai->chaves[indiceFilho];
+                // 2. Desloca tudo no irmão direito para a esquerda
+                for (int i = 0; i < cab_irmao.n - 1; i++) {
+                    memcpy((char*)chaves_irmao + (i * arvore->tamanho_chave), (char*)chaves_irmao + ((i + 1) * arvore->tamanho_chave), arvore->tamanho_chave);
+                    memcpy((char*)dados_irmao + (i * arvore->tamanho_registro), (char*)dados_irmao + ((i + 1) * arvore->tamanho_registro), arvore->tamanho_registro);
+                }
+                cab_irmao.n--;
 
-            filho->filhos[filho->n + 1] =
-                irmaoDir->filhos[0];
+                // 3. Atualiza o separador no PAI (a nova primeira chave do irmão direito)
+                memcpy((char*)chaves_pai + (pos_filho * arvore->tamanho_chave), chaves_irmao, arvore->tamanho_chave);
 
-            filho->n++;
+                // 4. Salva no disco
+                gravar_no(arvore, offset_no, &cab_no, chaves_no, dados_no, filhos_no);
+                gravar_no(arvore, offset_dir, &cab_irmao, chaves_irmao, dados_irmao, filhos_irmao);
+                gravar_no(arvore, offset_pai, &cab_pai, chaves_pai, dados_pai, filhos_pai);
 
-            pai->chaves[indiceFilho] =
-                irmaoDir->chaves[0];
-
-            for (int j = 0; j < irmaoDir->n - 1; j++)
-                irmaoDir->chaves[j] = irmaoDir->chaves[j + 1];
-
-            for (int j = 0; j < irmaoDir->n; j++)
-                irmaoDir->filhos[j] = irmaoDir->filhos[j + 1];
-
-            irmaoDir->n--;
-
-            return 1;
+                resolveu = true;
+            }
         }
 
-        // 3️⃣ MERGE
-        if (irmaoEsq) {
+        // --- TENTATIVA 3: Fundir (Merge) com o Irmão Esquerdo ---
+        if (!resolveu && offset_esq != -1) {
+            // Re-lê o irmão esquerdo (caso não tenha sido lido na tentativa 1)
+            ler_no(arvore, offset_esq, &cab_irmao, chaves_irmao, dados_irmao, filhos_irmao);
 
-            int base = irmaoEsq->n;
+            // 1. Despeja todo o conteúdo do nó alvo para o final do irmão esquerdo
+            for (int i = 0; i < cab_no.n; i++) {
+                memcpy((char*)chaves_irmao + ((cab_irmao.n + i) * arvore->tamanho_chave), (char*)chaves_no + (i * arvore->tamanho_chave), arvore->tamanho_chave);
+                memcpy((char*)dados_irmao + ((cab_irmao.n + i) * arvore->tamanho_registro), (char*)dados_no + (i * arvore->tamanho_registro), arvore->tamanho_registro);
+            }
+            cab_irmao.n += cab_no.n;
 
-            irmaoEsq->chaves[base] =
-                pai->chaves[indiceFilho - 1];
+            // 2. Mantém a integridade da Lista Encadeada
+            cab_irmao.offset_prox_folha = cab_no.offset_prox_folha;
 
-            for (int j = 0; j < filho->n; j++)
-                irmaoEsq->chaves[base + 1 + j] =
-                    filho->chaves[j];
+            // 3. Remove a chave separadora e o ponteiro do nó alvo lá no PAI
+            for (int i = pos_filho - 1; i < cab_pai.n - 1; i++) {
+                memcpy((char*)chaves_pai + (i * arvore->tamanho_chave), (char*)chaves_pai + ((i + 1) * arvore->tamanho_chave), arvore->tamanho_chave);
+            }
+            for (int i = pos_filho; i < cab_pai.n; i++) {
+                filhos_pai[i] = filhos_pai[i + 1];
+            }
+            cab_pai.n--;
 
-            for (int j = 0; j <= filho->n; j++)
-                irmaoEsq->filhos[base + 1 + j] =
-                    filho->filhos[j];
+            // 4. Salva no disco
+            gravar_no(arvore, offset_esq, &cab_irmao, chaves_irmao, dados_irmao, filhos_irmao);
+            gravar_no(arvore, offset_pai, &cab_pai, chaves_pai, dados_pai, filhos_pai);
+            // Obs: O bloco físico do `offset_no` ficará "órfão/lixo" no arquivo (fragmentação). 
+            // Como é um trabalho acadêmico, não precisamos implementar um "Garbage Collector" de disco.
 
-            irmaoEsq->n += 1 + filho->n;
-
-            for (int j = indiceFilho - 1; j < pai->n - 1; j++)
-                pai->chaves[j] = pai->chaves[j + 1];
-
-            for (int j = indiceFilho; j < pai->n; j++)
-                pai->filhos[j] = pai->filhos[j + 1];
-
-            pai->n--;
-            free(filho);
-
-            return 1;
+            resolveu = true;
         }
-        else if (irmaoDir) {
 
-            int base = filho->n;
+        // --- TENTATIVA 4: Fundir (Merge) com o Irmão Direito ---
+        if (!resolveu && offset_dir != -1) {
+            ler_no(arvore, offset_dir, &cab_irmao, chaves_irmao, dados_irmao, filhos_irmao);
 
-            filho->chaves[base] =
-                pai->chaves[indiceFilho];
+            // 1. Despeja todo o conteúdo do irmão direito para o final do nó alvo
+            for (int i = 0; i < cab_irmao.n; i++) {
+                memcpy((char*)chaves_no + ((cab_no.n + i) * arvore->tamanho_chave), (char*)chaves_irmao + (i * arvore->tamanho_chave), arvore->tamanho_chave);
+                memcpy((char*)dados_no + ((cab_no.n + i) * arvore->tamanho_registro), (char*)dados_irmao + (i * arvore->tamanho_registro), arvore->tamanho_registro);
+            }
+            cab_no.n += cab_irmao.n;
+            cab_no.offset_prox_folha = cab_irmao.offset_prox_folha;
 
-            for (int j = 0; j < irmaoDir->n; j++)
-                filho->chaves[base + 1 + j] =
-                    irmaoDir->chaves[j];
+            // 2. Remove a chave separadora e o ponteiro do irmão direito no PAI
+            for (int i = pos_filho; i < cab_pai.n - 1; i++) {
+                memcpy((char*)chaves_pai + (i * arvore->tamanho_chave), (char*)chaves_pai + ((i + 1) * arvore->tamanho_chave), arvore->tamanho_chave);
+            }
+            for (int i = pos_filho + 1; i < cab_pai.n; i++) {
+                filhos_pai[i] = filhos_pai[i + 1];
+            }
+            cab_pai.n--;
 
-            for (int j = 0; j <= irmaoDir->n; j++)
-                filho->filhos[base + 1 + j] =
-                    irmaoDir->filhos[j];
+            // 3. Salva no disco
+            gravar_no(arvore, offset_no, &cab_no, chaves_no, dados_no, filhos_no);
+            gravar_no(arvore, offset_pai, &cab_pai, chaves_pai, dados_pai, filhos_pai);
 
-            filho->n += 1 + irmaoDir->n;
-
-            for (int j = indiceFilho; j < pai->n - 1; j++)
-                pai->chaves[j] = pai->chaves[j + 1];
-
-            for (int j = indiceFilho + 1; j < pai->n; j++)
-                pai->filhos[j] = pai->filhos[j + 1];
-
-            pai->n--;
-            free(irmaoDir);
-
-            return 1;
+            resolveu = true;
         }
     }
 
-    return 0;
-}
+    // Libera a memória temporária das 4 laudas de RAM usadas
+    free(chaves_pai); free(dados_pai); free(filhos_pai);
+    free(chaves_no); free(dados_no); free(filhos_no);
+    free(chaves_irmao); free(dados_irmao); free(filhos_irmao);
 
-void remover(No** raiz, int chave) {
-    if (raiz == NULL || *raiz == NULL)
-        return;
-
-    // chama a recursiva que faz a remoção e corrige underflow
-    ResultadoRemocao res = removerRec(*raiz, chave);
-
-    // Ajusta altura: se raiz interna ficou sem chaves, promove o primeiro filho
-    if (!(*raiz)->folha && (*raiz)->n == 0) {
-        No* antiga = *raiz;
-        *raiz = (*raiz)->filhos[0];
-        free(antiga);
-        return;
-    }
-
-    // Se raiz é folha e ficou vazia, libera e define NULL
-    if ((*raiz)->folha && (*raiz)->n == 0) {
-        free(*raiz);
-        *raiz = NULL;
+    // ====================================================================
+    // PROPAGAÇÃO DO UNDERFLOW (A Mágica da Recursão)
+    // ====================================================================
+    // Se o nó pai, após perder uma chave em um Merge, ficou menor que o limite,
+    // a árvore vai consertar o pai recursivamente!
+    int min_interno = (P + 1) / 2 - 1;
+    if (resolveu && cab_pai.n < min_interno) {
+        corrigir_underflow_disco(arvore, offset_pai, caminho_pais, topo - 1);
     }
 }
