@@ -27,17 +27,13 @@ typedef struct {
 typedef struct {
     char nome[100];
     Data nascimento;
-    
     char nomeMae[100];
     char nomePai[100];
-    
     char endereco[200];
     char telefone[20];
-    
     Data contratacao;
     int ativo; // 1 para Ativo, 0 para Inativo
     Data desligamento; // Apenas se ativo == 0
-    
     // Vetor estático para os últimos 12 meses trabalhados
     float historicoPagamentos[12]; 
 } Funcionario;

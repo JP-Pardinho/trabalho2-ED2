@@ -1,12 +1,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include "Bplus1.h"
 #include "funcionarios.h"
 
-#define ARQUIVO_DADOS "registos.bin"
-#define ARQUIVO_INDICE "indice_rh.bin"
 
+#define SALARIO_MINIMO 1412.00
 // =======================================================
 // Variáveis Globais
 // =======================================================
@@ -121,16 +121,45 @@ int procurar_por_nome(ArvoreBPlus *arvore, char *nome_buscado) {
 }
 
 // =======================================================
+// Lógica de Pagamentos (Tempo Real)
+// =======================================================
+void calcular_pagamentos(Funcionario *f) {
+    // 1. Pega a data e hora atual do seu computador
+    time_t t = time(NULL);
+    struct tm tm = *localtime(&t);
+    int ano_atual = tm.tm_year + 1900;
+    int mes_atual = tm.tm_mon + 1; // tm_mon vai de 0 a 11, então somamos 1
+
+    // 2. Calcula quantos meses se passaram desde a contratação
+    // Multiplicamos os anos por 12 e somamos a diferença de meses.
+    // Somamos +1 para incluir o mês de entrada como um mês pago.
+    int meses_trabalhados = (ano_atual - f->contratacao.ano) * 12 + (mes_atual - f->contratacao.mes) + 1;
+
+    // Se por acaso a pessoa digitou uma data no futuro, zera para evitar erros
+    if (meses_trabalhados < 0) {
+        meses_trabalhados = 0;
+    }
+
+    // 3. O histórico só guarda os últimos 12 meses no máximo
+    int limite = (meses_trabalhados > 12) ? 12 : meses_trabalhados;
+
+    // 4. Preenche o vetor com o Salário Mínimo
+    for (int i = 0; i < limite; i++) {
+        f->historicoPagamentos[i] = SALARIO_MINIMO;
+    }
+}
+
+// =======================================================
 // Função Principal e Menu Interativo
 // =======================================================
 int main() {
     // 1. Inicialização dos ficheiros
-    arquivo_dados = fopen(ARQUIVO_DADOS, "rb+");
+    arquivo_dados = fopen("registos.bin", "rb+");
     if (arquivo_dados == NULL) {
-        arquivo_dados = fopen(ARQUIVO_DADOS, "wb+");
+        arquivo_dados = fopen("registos.bin", "wb+");
     }
 
-    ArvoreBPlus *arvore = criar_arvore(ARQUIVO_INDICE, 4, sizeof(ChaveFuncionario), comparar_chaves_funcionario);
+    ArvoreBPlus *arvore = criar_arvore("indice.bin", 4, sizeof(ChaveFuncionario), comparar_chaves_funcionario);
 
     int opcao;
     do {
@@ -190,6 +219,7 @@ int main() {
                     scanf("%d/%d/%d", &novo.contratacao.dia, &novo.contratacao.mes, &novo.contratacao.ano);
                     novo.ativo = 1;
                     memset(novo.historicoPagamentos, 0, sizeof(novo.historicoPagamentos));
+                    calcular_pagamentos(&novo);
                     limpar_buffer();
 
                     int novo_index = salvar_funcionario(&novo);
