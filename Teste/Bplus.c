@@ -21,6 +21,9 @@ typedef struct {
     long novoFilhoDireito;
 } ResultadoSplit;
 
+void tratarOverflow(ArvoreBPlus *arv, Pagina *folha, long folhaEnd, int altura, long pilhaEnderecos[]);
+bool tratarUnderflow(ArvoreBPlus *arv, Pagina *atual, int nivel, long pilhaEnderecos[], int pilhaIndices[]);
+
 long calcularTamanhoPagina() {
     long tamanhoBase = sizeof(bool) + sizeof(int); 
     tamanhoBase += (MAX_CHAVES * TAM_MAX_CHAVE); 
@@ -70,7 +73,7 @@ void carregarPaginaDisco(ArvoreBPlus *arv, long endereco, Pagina *pag) {
     } else {
         memcpy(pag->filhos, cursor, sizeof(long) * ORDEM);
         memset(pag->registrosDados, 0, sizeof(pag->registrosDados));
-        pag->proximaFolha = ENDERECO_NULO;
+        pag->proximaFolha = -1;
     }
     
     pag->enderecoProprio = endereco;
@@ -106,7 +109,7 @@ ArvoreBPlus* criarArvore(const char *caminho, CompararChavesFn cmp, SerializarCh
         arv->proximoBlocoLivre = cab.proximoBlocoLivre;
     } else {
         arv->arquivoDisco = fopen(caminho, "wb+");
-        arv->enderecoRaiz = ENDERECO_NULO;
+        arv->enderecoRaiz = -1;
         arv->proximoBlocoLivre = sizeof(CabecalhoDisco);
         atualizarCabecalho(arv);
     }
@@ -121,7 +124,7 @@ void fecharArvore(ArvoreBPlus *arv) {
 }
 
 bool buscarChave(ArvoreBPlus *arv, const void *chave, long *enderecoRetorno) {
-    if (arv->enderecoRaiz == ENDERECO_NULO) return false;
+    if (arv->enderecoRaiz == -1) return false;
     
     long endAtual = arv->enderecoRaiz;
     Pagina pag;
@@ -275,7 +278,7 @@ ResultadoSplit splitInterno(ArvoreBPlus *arv, Pagina *interno) {
     direita.qtdElementos = total - meio - 1;
     memset(direita.chaves, 0, sizeof(direita.chaves));
     memset(direita.filhos, 0, sizeof(direita.filhos));
-    direita.proximaFolha = ENDERECO_NULO;
+    direita.proximaFolha = -1;
     
     for (int i = meio + 1; i < total; i++) {
         memcpy(direita.chaves[i - meio - 1], interno->chaves[i], TAM_MAX_CHAVE);
@@ -303,7 +306,7 @@ void criarNovaRaiz(ArvoreBPlus *arv, long filhoEsquerdo, const unsigned char *ch
     memset(novaRaiz.filhos, 0, sizeof(novaRaiz.filhos));
     novaRaiz.filhos[0] = filhoEsquerdo;
     novaRaiz.filhos[1] = filhoDireito;
-    novaRaiz.proximaFolha = ENDERECO_NULO;
+    novaRaiz.proximaFolha = -1;
     
     salvarPaginaDisco(arv, &novaRaiz);
     arv->enderecoRaiz = novaRaiz.enderecoProprio;
@@ -313,14 +316,14 @@ bool inserirChave(ArvoreBPlus *arv, const void *chave, long enderecoRegistroRh) 
     if (buscarChave(arv, chave, NULL)) return false; 
     
     // Caso 1: Árvore vazia, cria a primeira página (raiz)
-    if (arv->enderecoRaiz == ENDERECO_NULO) {
+    if (arv->enderecoRaiz == -1) {
         Pagina raiz;
         raiz.enderecoProprio = alocarPagina(arv);
         raiz.ehFolha = true;
         raiz.qtdElementos = 0;
         memset(raiz.chaves, 0, sizeof(raiz.chaves));
         memset(raiz.registrosDados, 0, sizeof(raiz.registrosDados));
-        raiz.proximaFolha = ENDERECO_NULO;
+        raiz.proximaFolha = -1;
         
         inserirEmFolhaOrdenado(arv, &raiz, chave, enderecoRegistroRh);
         salvarPaginaDisco(arv, &raiz);
@@ -471,17 +474,17 @@ bool tratarUnderflow(ArvoreBPlus *arv, Pagina *atual, int nivel, long pilhaEnder
         Pagina pai;
         carregarPaginaDisco(arv, paiEnd, &pai);
 
-        long irmaoEsqEnd = (idxNoPai > 0) ? pai.filhos[idxNoPai - 1] : ENDERECO_NULO;
-        long irmaoDirEnd = (idxNoPai < pai.qtdElementos) ? pai.filhos[idxNoPai + 1] : ENDERECO_NULO;
+        long irmaoEsqEnd = (idxNoPai > 0) ? pai.filhos[idxNoPai - 1] : -1;
+        long irmaoDirEnd = (idxNoPai < pai.qtdElementos) ? pai.filhos[idxNoPai + 1] : -1;
         bool resolvido = false;
 
-        if (irmaoEsqEnd != ENDERECO_NULO) {
+        if (irmaoEsqEnd != -1) {
             Pagina esq;
             carregarPaginaDisco(arv, irmaoEsqEnd, &esq);
             resolvido = emprestarDaEsquerda(arv, atual, &esq, &pai, idxNoPai);
         }
 
-        if (!resolvido && irmaoDirEnd != ENDERECO_NULO) {
+        if (!resolvido && irmaoDirEnd != -1) {
             Pagina dir;
             carregarPaginaDisco(arv, irmaoDirEnd, &dir);
             resolvido = emprestarDaDireita(arv, atual, &dir, &pai, idxNoPai);
@@ -489,7 +492,7 @@ bool tratarUnderflow(ArvoreBPlus *arv, Pagina *atual, int nivel, long pilhaEnder
 
         if (resolvido) return true;
 
-        if (irmaoEsqEnd != ENDERECO_NULO) {
+        if (irmaoEsqEnd != -1) {
             Pagina esq;
             carregarPaginaDisco(arv, irmaoEsqEnd, &esq);
             fundirPaginas(arv, &esq, atual, &pai, idxNoPai - 1);
@@ -554,7 +557,7 @@ void tratarOverflow(ArvoreBPlus *arv, Pagina *folha, long folhaEnd, int altura, 
 }
 
 bool removerChave(ArvoreBPlus *arv, const void *chave) {
-    if (arv->enderecoRaiz == ENDERECO_NULO) return false;
+    if (arv->enderecoRaiz == -1) return false;
     if (!buscarChave(arv, chave, NULL)) return false;
 
     long pilhaEnderecos[64];
@@ -568,7 +571,7 @@ bool removerChave(ArvoreBPlus *arv, const void *chave) {
 
     if (altura == 0) {
         if (folha.qtdElementos == 0) {
-            arv->enderecoRaiz = ENDERECO_NULO;
+            arv->enderecoRaiz = -1;
         } else {
             salvarPaginaDisco(arv, &folha);
         }
@@ -585,12 +588,12 @@ bool removerChave(ArvoreBPlus *arv, const void *chave) {
 }
 
 void buscarIntervalo(ArvoreBPlus *arv, const void *chaveA, const void *chaveB, VisitarNoFn visitar, void *contexto) {
-    if (arv->enderecoRaiz == ENDERECO_NULO) return;
+    if (arv->enderecoRaiz == -1) return;
     
     int altura = 0;
     long folhaEnd = descerParaFolha(arv, chaveA, NULL, NULL, &altura);
     
-    while (folhaEnd != ENDERECO_NULO) {
+    while (folhaEnd != -1) {
         Pagina folha;
         carregarPaginaDisco(arv, folhaEnd, &folha);
         
@@ -611,7 +614,7 @@ void buscarIntervalo(ArvoreBPlus *arv, const void *chaveA, const void *chaveB, V
 }
 
 void imprimirNoRecursivo(ArvoreBPlus *arv, long endereco, int nivel) {
-    if (endereco == ENDERECO_NULO) return;
+    if (endereco == -1) return;
     
     Pagina pag;
     carregarPaginaDisco(arv, endereco, &pag);
@@ -635,7 +638,7 @@ void imprimirNoRecursivo(ArvoreBPlus *arv, long endereco, int nivel) {
 }
 
 void imprimirEstruturaArvore(ArvoreBPlus *arv) {
-    if (arv->enderecoRaiz == ENDERECO_NULO) {
+    if (arv->enderecoRaiz == -1) {
         printf("(Árvore vazia)\n");
         return;
     }

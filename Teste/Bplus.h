@@ -10,7 +10,6 @@
 #define MAX_CHAVES (ORDEM - 1)
 #define MIN_CHAVES (MAX_CHAVES / 2)
 #define TAM_MAX_CHAVE 128
-#define ENDERECO_NULO -1L
 
 typedef int  (*CompararChavesFn)(const void *chaveA, const void *chaveB);
 typedef void (*SerializarChaveFn)(const void *chave, unsigned char *buffer);

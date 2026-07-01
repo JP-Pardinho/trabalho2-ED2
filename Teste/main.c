@@ -315,6 +315,8 @@ typedef struct {
 } ContextoIntervalo;
 
 void imprimirLinhaIntervalo(const void *chave, long endereco, void *contexto) {
+    (void)chave;
+    
     ContextoIntervalo *ctx = (ContextoIntervalo *) contexto;
     Funcionario f = lerFuncionario(ctx->dados, endereco);
     ctx->contador++;
