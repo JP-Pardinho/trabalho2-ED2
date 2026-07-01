@@ -7,11 +7,6 @@
 #include <stdbool.h>
 #include "Bplus.h"
 
-#define TAM_NOME 100
-#define TAM_ENDERECO 150
-#define TAM_TELEFONE 20
-#define MAX_HISTORICO 12
-
 typedef struct {
     int dia;
     int mes;
@@ -19,7 +14,7 @@ typedef struct {
 } Data;
 
 typedef struct {
-    char nome[TAM_NOME];
+    char nome[100];
     Data nascimento;
 } ChaveFuncionario;
 
@@ -29,20 +24,20 @@ typedef struct {
 } Pagamento;
 
 typedef struct {
-    char nome[TAM_NOME];
+    char nome[100];
     Data nascimento;
-    char nomeMae[TAM_NOME];
-    char nomePai[TAM_NOME];
-    char endereco[TAM_ENDERECO];
-    char telefone[TAM_TELEFONE];
+    char nomeMae[100];
+    char nomePai[100];
+    char endereco[150];
+    char telefone[20];
     Data dataContratacao;
     bool ativo;
     Data dataDesligamento;
-    Pagamento historico[MAX_HISTORICO];
+    Pagamento historico[12];
     int qtdPagamentos;
 } Funcionario;
 
-FILE* abrirArquivoDados(const char *caminho);
+FILE *abrirArquivoDados(const char *caminho);
 long gravarFuncionario(FILE *arq, const Funcionario *f);
 void atualizarFuncionario(FILE *arq, long endereco, const Funcionario *f);
 Funcionario lerFuncionario(FILE *arq, long endereco);

@@ -1,7 +1,6 @@
 #include "Bplus.h"
 
-typedef struct
-{
+typedef struct {
     long enderecoProprio;
     bool ehFolha;
     int qtdElementos;
@@ -11,14 +10,12 @@ typedef struct
     long proximaFolha;
 } Pagina;
 
-typedef struct
-{
+typedef struct {
     long raiz;
     long proximoBlocoLivre;
 } CabecalhoDisco;
 
-typedef struct
-{
+typedef struct {
     bool houveSplit;
     unsigned char chavePromovida[TAM_MAX_CHAVE];
     long novoFilhoDireito;
@@ -27,8 +24,7 @@ typedef struct
 void tratarOverflow(ArvoreBPlus *arv, Pagina *folha, long folhaEnd, int altura, long pilhaEnderecos[]);
 bool tratarUnderflow(ArvoreBPlus *arv, Pagina *atual, int nivel, long pilhaEnderecos[], int pilhaIndices[]);
 
-long calcularTamanhoPagina()
-{
+long calcularTamanhoPagina() {
     long tamanhoBase = sizeof(bool) + sizeof(int);
     tamanhoBase += (MAX_CHAVES * TAM_MAX_CHAVE);
 
@@ -38,8 +34,7 @@ long calcularTamanhoPagina()
     return (tamanhoInterno > tamanhoFolha) ? tamanhoInterno : tamanhoFolha;
 }
 
-void salvarPaginaDisco(ArvoreBPlus *arv, const Pagina *pag)
-{
+void salvarPaginaDisco(ArvoreBPlus *arv, const Pagina *pag) {
     unsigned char *buffer = (unsigned char *)calloc(1, arv->tamanhoNoBytes);
     unsigned char *cursor = buffer;
 
@@ -67,8 +62,7 @@ void salvarPaginaDisco(ArvoreBPlus *arv, const Pagina *pag)
     free(buffer);
 }
 
-void carregarPaginaDisco(ArvoreBPlus *arv, long endereco, Pagina *pag)
-{
+void carregarPaginaDisco(ArvoreBPlus *arv, long endereco, Pagina *pag) {
     unsigned char *buffer = (unsigned char *)malloc(arv->tamanhoNoBytes);
 
     fseek(arv->arquivoDisco, endereco, SEEK_SET);
@@ -100,16 +94,14 @@ void carregarPaginaDisco(ArvoreBPlus *arv, long endereco, Pagina *pag)
     free(buffer);
 }
 
-void atualizarCabecalho(ArvoreBPlus *arv)
-{
+void atualizarCabecalho(ArvoreBPlus *arv) {
     CabecalhoDisco cab = {arv->enderecoRaiz, arv->proximoBlocoLivre};
     fseek(arv->arquivoDisco, 0, SEEK_SET);
     fwrite(&cab, sizeof(CabecalhoDisco), 1, arv->arquivoDisco);
     fflush(arv->arquivoDisco);
 }
 
-ArvoreBPlus *criarArvore(const char *caminho, CompararChaves cmp, GravarChave gravar, LerChave ler, TamanhoChave tam, LiberarChave lib, ImprimirChave imp)
-{
+ArvoreBPlus *criarArvore(const char *caminho, CompararChaves cmp, GravarChave gravar, LerChave ler, TamanhoChave tam, LiberarChave lib, ImprimirChave imp) {
 
     ArvoreBPlus *arv = (ArvoreBPlus *)malloc(sizeof(ArvoreBPlus));
     arv->comparar = cmp;
@@ -141,8 +133,7 @@ ArvoreBPlus *criarArvore(const char *caminho, CompararChaves cmp, GravarChave gr
     return arv;
 }
 
-void fecharArvore(ArvoreBPlus *arv)
-{
+void fecharArvore(ArvoreBPlus *arv) {
     if (!arv)
         return;
     atualizarCabecalho(arv);
@@ -150,8 +141,7 @@ void fecharArvore(ArvoreBPlus *arv)
     free(arv);
 }
 
-bool buscarChave(ArvoreBPlus *arv, const void *chave, long *enderecoRetorno)
-{
+bool buscarChave(ArvoreBPlus *arv, const void *chave, long *enderecoRetorno) {
     if (arv->enderecoRaiz == -1)
         return false;
 
@@ -194,16 +184,13 @@ bool buscarChave(ArvoreBPlus *arv, const void *chave, long *enderecoRetorno)
     }
 }
 
-long alocarPagina(ArvoreBPlus *arv)
-{
+long alocarPagina(ArvoreBPlus *arv) {
     long endereco = arv->proximoBlocoLivre;
     arv->proximoBlocoLivre += arv->tamanhoNoBytes;
     return endereco;
 }
 
-long descerParaFolha(ArvoreBPlus *arv, const void *chave,
-                     long *pilhaEnderecos, int *pilhaIndices, int *altura)
-{
+long descerParaFolha(ArvoreBPlus *arv, const void *chave, long *pilhaEnderecos, int *pilhaIndices, int *altura) {
     long endAtual = arv->enderecoRaiz;
     *altura = 0;
 
@@ -234,8 +221,7 @@ long descerParaFolha(ArvoreBPlus *arv, const void *chave,
     }
 }
 
-void inserirEmFolhaOrdenado(ArvoreBPlus *arv, Pagina *folha, const void *chave, long enderecoRegistro)
-{
+void inserirEmFolhaOrdenado(ArvoreBPlus *arv, Pagina *folha, const void *chave, long enderecoRegistro) {
     int i = folha->qtdElementos - 1;
     unsigned char bufChave[TAM_MAX_CHAVE];
     memset(bufChave, 0, TAM_MAX_CHAVE);
@@ -258,8 +244,7 @@ void inserirEmFolhaOrdenado(ArvoreBPlus *arv, Pagina *folha, const void *chave, 
     folha->qtdElementos++;
 }
 
-void inserirEmInternoOrdenado(ArvoreBPlus *arv, Pagina *interno, const void *chave, long filhoDireito)
-{
+void inserirEmInternoOrdenado(ArvoreBPlus *arv, Pagina *interno, const void *chave, long filhoDireito) {
     int i = interno->qtdElementos - 1;
     unsigned char bufChave[TAM_MAX_CHAVE];
     memset(bufChave, 0, TAM_MAX_CHAVE);
@@ -282,8 +267,7 @@ void inserirEmInternoOrdenado(ArvoreBPlus *arv, Pagina *interno, const void *cha
     interno->qtdElementos++;
 }
 
-ResultadoSplit splitFolha(ArvoreBPlus *arv, Pagina *folha)
-{
+ResultadoSplit splitFolha(ArvoreBPlus *arv, Pagina *folha) {
     ResultadoSplit res;
     res.houveSplit = true;
 
@@ -315,8 +299,7 @@ ResultadoSplit splitFolha(ArvoreBPlus *arv, Pagina *folha)
     return res;
 }
 
-ResultadoSplit splitInterno(ArvoreBPlus *arv, Pagina *interno)
-{
+ResultadoSplit splitInterno(ArvoreBPlus *arv, Pagina *interno) {
     ResultadoSplit res;
     res.houveSplit = true;
 
@@ -351,8 +334,7 @@ ResultadoSplit splitInterno(ArvoreBPlus *arv, Pagina *interno)
     return res;
 }
 
-void criarNovaRaiz(ArvoreBPlus *arv, long filhoEsquerdo, const unsigned char *chaveBuf, long filhoDireito)
-{
+void criarNovaRaiz(ArvoreBPlus *arv, long filhoEsquerdo, const unsigned char *chaveBuf, long filhoDireito) {
     Pagina novaRaiz;
     novaRaiz.enderecoProprio = alocarPagina(arv);
     novaRaiz.ehFolha = false;
@@ -368,8 +350,7 @@ void criarNovaRaiz(ArvoreBPlus *arv, long filhoEsquerdo, const unsigned char *ch
     arv->enderecoRaiz = novaRaiz.enderecoProprio;
 }
 
-bool inserirChave(ArvoreBPlus *arv, const void *chave, long enderecoRegistroRh)
-{
+bool inserirChave(ArvoreBPlus *arv, const void *chave, long enderecoRegistroRh) {
     if (buscarChave(arv, chave, NULL))
         return false;
 
@@ -415,8 +396,7 @@ bool inserirChave(ArvoreBPlus *arv, const void *chave, long enderecoRegistroRh)
     return true;
 }
 
-void removerDeFolha(ArvoreBPlus *arv, Pagina *folha, const void *chave)
-{
+void removerDeFolha(ArvoreBPlus *arv, Pagina *folha, const void *chave) {
     int pos = -1;
     for (int i = 0; i < folha->qtdElementos; i++)
     {
@@ -439,8 +419,7 @@ void removerDeFolha(ArvoreBPlus *arv, Pagina *folha, const void *chave)
     folha->qtdElementos--;
 }
 
-void removerDeInterno(Pagina *interno, int pos)
-{
+void removerDeInterno(Pagina *interno, int pos) {
     for (int i = pos; i < interno->qtdElementos - 1; i++)
     {
         memcpy(interno->chaves[i], interno->chaves[i + 1], TAM_MAX_CHAVE);
@@ -452,8 +431,7 @@ void removerDeInterno(Pagina *interno, int pos)
     interno->qtdElementos--;
 }
 
-bool emprestarDaEsquerda(ArvoreBPlus *arv, Pagina *atual, Pagina *esq, Pagina *pai, int idxNoPai)
-{
+bool emprestarDaEsquerda(ArvoreBPlus *arv, Pagina *atual, Pagina *esq, Pagina *pai, int idxNoPai) {
     if (esq->qtdElementos <= MIN_CHAVES)
         return false;
 
@@ -492,8 +470,7 @@ bool emprestarDaEsquerda(ArvoreBPlus *arv, Pagina *atual, Pagina *esq, Pagina *p
     return true;
 }
 
-bool emprestarDaDireita(ArvoreBPlus *arv, Pagina *atual, Pagina *dir, Pagina *pai, int idxNoPai)
-{
+bool emprestarDaDireita(ArvoreBPlus *arv, Pagina *atual, Pagina *dir, Pagina *pai, int idxNoPai) {
     if (dir->qtdElementos <= MIN_CHAVES)
         return false;
 
@@ -532,8 +509,7 @@ bool emprestarDaDireita(ArvoreBPlus *arv, Pagina *atual, Pagina *dir, Pagina *pa
     return true;
 }
 
-void fundirPaginas(ArvoreBPlus *arv, Pagina *esq, Pagina *dir, Pagina *pai, int idxPaiEsq)
-{
+void fundirPaginas(ArvoreBPlus *arv, Pagina *esq, Pagina *dir, Pagina *pai, int idxPaiEsq) {
     if (dir->ehFolha)
     {
         for (int i = 0; i < dir->qtdElementos; i++)
@@ -561,8 +537,7 @@ void fundirPaginas(ArvoreBPlus *arv, Pagina *esq, Pagina *dir, Pagina *pai, int 
     removerDeInterno(pai, idxPaiEsq);
 }
 
-bool tratarUnderflow(ArvoreBPlus *arv, Pagina *atual, int nivel, long pilhaEnderecos[], int pilhaIndices[])
-{
+bool tratarUnderflow(ArvoreBPlus *arv, Pagina *atual, int nivel, long pilhaEnderecos[], int pilhaIndices[]) {
     while (nivel >= 0)
     {
         long paiEnd = pilhaEnderecos[nivel];
@@ -631,8 +606,7 @@ bool tratarUnderflow(ArvoreBPlus *arv, Pagina *atual, int nivel, long pilhaEnder
     return true;
 }
 
-void tratarOverflow(ArvoreBPlus *arv, Pagina *folha, long folhaEnd, int altura, long pilhaEnderecos[])
-{
+void tratarOverflow(ArvoreBPlus *arv, Pagina *folha, long folhaEnd, int altura, long pilhaEnderecos[]) {
     // Inicia o processo quebrando a folha que estourou o limite
     ResultadoSplit res = splitFolha(arv, folha);
     int nivel = altura - 1;
@@ -669,8 +643,7 @@ void tratarOverflow(ArvoreBPlus *arv, Pagina *folha, long folhaEnd, int altura, 
     }
 }
 
-bool removerChave(ArvoreBPlus *arv, const void *chave)
-{
+bool removerChave(ArvoreBPlus *arv, const void *chave) {
     if (arv->enderecoRaiz == -1)
         return false;
     if (!buscarChave(arv, chave, NULL))
@@ -708,8 +681,7 @@ bool removerChave(ArvoreBPlus *arv, const void *chave)
     return tratarUnderflow(arv, &folha, altura - 1, pilhaEnderecos, pilhaIndices);
 }
 
-void buscarIntervalo(ArvoreBPlus *arv, const void *chaveA, const void *chaveB, VisitarNo visitar, void *contexto)
-{
+void buscarIntervalo(ArvoreBPlus *arv, const void *chaveA, const void *chaveB, VisitarNo visitar, void *contexto) {
     if (arv->enderecoRaiz == -1)
         return;
 
@@ -740,8 +712,7 @@ void buscarIntervalo(ArvoreBPlus *arv, const void *chaveA, const void *chaveB, V
     }
 }
 
-void imprimirNoRecursivo(ArvoreBPlus *arv, long endereco, int nivel)
-{
+void imprimirNoRecursivo(ArvoreBPlus *arv, long endereco, int nivel) {
     if (endereco == -1)
         return;
 
@@ -771,8 +742,7 @@ void imprimirNoRecursivo(ArvoreBPlus *arv, long endereco, int nivel)
     }
 }
 
-void imprimirEstruturaArvore(ArvoreBPlus *arv)
-{
+void imprimirEstruturaArvore(ArvoreBPlus *arv) {
     if (arv->enderecoRaiz == -1)
     {
         printf("(Árvore vazia)\n");

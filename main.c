@@ -9,8 +9,7 @@
 #define ARQ_DADOS "dados.bin"
 #define MAX_HOMONIMOS 100
 
-typedef struct
-{
+typedef struct {
     ChaveFuncionario chaves[MAX_HOMONIMOS];
     long enderecos[MAX_HOMONIMOS];
     int qtd;
@@ -19,24 +18,21 @@ typedef struct
 // ============================================================================
 // CALLBACKS DA CHAVE MOVIDOS AQUI
 // ============================================================================
-ChaveFuncionario *criarChave(const char *nome, int dia, int mes, int ano)
-{
+ChaveFuncionario *criarChave(const char *nome, int dia, int mes, int ano) {
     ChaveFuncionario *k = (ChaveFuncionario *)malloc(sizeof(ChaveFuncionario));
     memset(k, 0, sizeof(ChaveFuncionario));
-    strncpy(k->nome, nome, TAM_NOME - 1);
+    strncpy(k->nome, nome, 100 - 1);
     k->nascimento.dia = dia;
     k->nascimento.mes = mes;
     k->nascimento.ano = ano;
     return k;
 }
 
-long dataParaNumero(Data d)
-{
+long dataParaNumero(Data d) {
     return (long)d.ano * 10000L + (long)d.mes * 100L + (long)d.dia;
 }
 
-int compararChave(const void *chaveA, const void *chaveB)
-{
+int compararChave(const void *chaveA, const void *chaveB) {
     const ChaveFuncionario *a = (const ChaveFuncionario *)chaveA;
     const ChaveFuncionario *b = (const ChaveFuncionario *)chaveB;
     int cmpNome = strcmp(a->nome, b->nome);
@@ -52,37 +48,32 @@ int compararChave(const void *chaveA, const void *chaveB)
     return 0;
 }
 
-void GravarChaveChave(const void *chave, unsigned char *buffer)
-{
+void GravarChaveChave(const void *chave, unsigned char *buffer) {
     const ChaveFuncionario *k = (const ChaveFuncionario *)chave;
     unsigned char *cursor = buffer;
-    memcpy(cursor, k->nome, TAM_NOME);
-    cursor += TAM_NOME;
+    memcpy(cursor, k->nome, 100);
+    cursor += 100;
     memcpy(cursor, &k->nascimento, sizeof(Data));
 }
 
-void *LerChaveChave(const unsigned char *buffer)
-{
+void *LerChaveChave(const unsigned char *buffer) {
     ChaveFuncionario *k = (ChaveFuncionario *)malloc(sizeof(ChaveFuncionario));
     const unsigned char *cursor = buffer;
-    memcpy(k->nome, cursor, TAM_NOME);
-    cursor += TAM_NOME;
+    memcpy(k->nome, cursor, 100);
+    cursor += 100;
     memcpy(&k->nascimento, cursor, sizeof(Data));
     return k;
 }
 
-int tamanhoChave(void)
-{
-    return TAM_NOME + sizeof(Data);
+int tamanhoChave(void) {
+    return 100 + sizeof(Data);
 }
 
-void liberarChave(void *chave)
-{
+void liberarChave(void *chave) {
     free(chave);
 }
 
-void imprimirChave(const void *chave)
-{
+void imprimirChave(const void *chave) {
     const ChaveFuncionario *k = (const ChaveFuncionario *)chave;
     printf("%s (%02d/%02d/%04d)", k->nome, k->nascimento.dia, k->nascimento.mes, k->nascimento.ano);
 }
@@ -90,23 +81,20 @@ void imprimirChave(const void *chave)
 // ============================================================================
 // OPÇÕES DO SISTEMA E AUXILIARES
 // ============================================================================
-void lerLinha(char *destino, int tamanho)
-{
+void lerLinha(char *destino, int tamanho) {
     if (fgets(destino, tamanho, stdin) != NULL)
     {
         destino[strcspn(destino, "\n")] = '\0';
     }
 }
 
-int lerInteiro(void)
-{
+int lerInteiro(void) {
     char buffer[32];
-    lerLinha(buffer, sizeof(buffer));
+    lerLinha(buffer, sizeof(buffer)); 
     return atoi(buffer);
 }
 
-static void lerData(const char *rotulo, Data *d)
-{
+static void lerData(const char *rotulo, Data *d) {
     printf("%s (dia mes ano): ", rotulo);
     char buffer[64];
     lerLinha(buffer, sizeof(buffer));
@@ -123,8 +111,7 @@ static void lerData(const char *rotulo, Data *d)
     }
 }
 
-void coletarResultado(const void *chave, long endereco, void *contexto)
-{
+void coletarResultado(const void *chave, long endereco, void *contexto) {
     ListaResultados *lista = (ListaResultados *)contexto;
     if (lista->qtd < MAX_HOMONIMOS)
     {
@@ -135,8 +122,7 @@ void coletarResultado(const void *chave, long endereco, void *contexto)
     }
 }
 
-void buscarTodosPorNome(ArvoreBPlus *arv, const char *nome, ListaResultados *lista)
-{
+void buscarTodosPorNome(ArvoreBPlus *arv, const char *nome, ListaResultados *lista) {
     lista->qtd = 0;
     ChaveFuncionario *chaveA = criarChave(nome, 0, 0, 0);
     ChaveFuncionario *chaveB = criarChave(nome, 31, 12, 9999);
@@ -145,8 +131,7 @@ void buscarTodosPorNome(ArvoreBPlus *arv, const char *nome, ListaResultados *lis
     free(chaveB);
 }
 
-int escolherHomonimo(const ListaResultados *lista)
-{
+int escolherHomonimo(const ListaResultados *lista) {
     printf("\nForam encontrados %d funcionarios com esse nome:\n", lista->qtd);
     for (int i = 0; i < lista->qtd; i++)
     {
@@ -174,9 +159,8 @@ int escolherHomonimo(const ListaResultados *lista)
     return -1;
 }
 
-void opcaoInserir(ArvoreBPlus *arv, FILE *dados)
-{
-    char nome[TAM_NOME];
+void opcaoInserir(ArvoreBPlus *arv, FILE *dados) {
+    char nome[100];
     Data nascimento;
 
     printf("\n--- Inserir Funcionario ---\n");
@@ -227,7 +211,7 @@ void opcaoInserir(ArvoreBPlus *arv, FILE *dados)
 
     Funcionario f;
     memset(&f, 0, sizeof(Funcionario));
-    strncpy(f.nome, nome, TAM_NOME - 1);
+    strncpy(f.nome, nome, 100 - 1);
     f.nascimento = nascimento;
 
     printf("Nome da mae: ");
@@ -277,9 +261,8 @@ void opcaoInserir(ArvoreBPlus *arv, FILE *dados)
     free(chave);
 }
 
-void opcaoBuscar(ArvoreBPlus *arv, FILE *dados)
-{
-    char nome[TAM_NOME];
+void opcaoBuscar(ArvoreBPlus *arv, FILE *dados) {
+    char nome[100];
     printf("\n--- Buscar Funcionario ---\n");
     printf("Nome: ");
     lerLinha(nome, sizeof(nome));
@@ -308,9 +291,8 @@ void opcaoBuscar(ArvoreBPlus *arv, FILE *dados)
     imprimirFichaCompleta(&f);
 }
 
-void opcaoExcluir(ArvoreBPlus *arv, FILE *dados)
-{
-    char nome[TAM_NOME];
+void opcaoExcluir(ArvoreBPlus *arv, FILE *dados) {
+    char nome[100];
     printf("\n--- Excluir Funcionario ---\n");
     printf("Nome: ");
     lerLinha(nome, sizeof(nome));
@@ -355,14 +337,12 @@ void opcaoExcluir(ArvoreBPlus *arv, FILE *dados)
     }
 }
 
-typedef struct
-{
+typedef struct {
     FILE *dados;
     int contador;
 } ContextoIntervalo;
 
-void imprimirLinhaIntervalo(const void *chave, long endereco, void *contexto)
-{
+void imprimirLinhaIntervalo(const void *chave, long endereco, void *contexto) {
     (void)chave;
 
     ContextoIntervalo *ctx = (ContextoIntervalo *)contexto;
@@ -372,9 +352,8 @@ void imprimirLinhaIntervalo(const void *chave, long endereco, void *contexto)
            f.nascimento.dia, f.nascimento.mes, f.nascimento.ano);
 }
 
-void opcaoIntervalo(ArvoreBPlus *arv, FILE *dados)
-{
-    char nomeA[TAM_NOME], nomeB[TAM_NOME];
+void opcaoIntervalo(ArvoreBPlus *arv, FILE *dados) {
+    char nomeA[100], nomeB[100];
     printf("\n--- Listagem por Intervalo ---\n");
     printf("Nome A (limite inicial): ");
     lerLinha(nomeA, sizeof(nomeA));
@@ -396,8 +375,7 @@ void opcaoIntervalo(ArvoreBPlus *arv, FILE *dados)
     free(chaveB);
 }
 
-void exibirMenu(void)
-{
+void exibirMenu(void) {
     printf("\n=================================================\n");
     printf("   SISTEMA DE GESTAO DE RH E FOLHA DE PAGAMENTO\n");
     printf("=================================================\n");
@@ -410,8 +388,7 @@ void exibirMenu(void)
     printf("Escolha uma opcao: ");
 }
 
-int main(void)
-{
+int main(void) {
     ArvoreBPlus *arvore = criarArvore(ARQ_INDICE, compararChave, GravarChaveChave, LerChaveChave, tamanhoChave, liberarChave, imprimirChave);
 
     FILE *dados = abrirArquivoDados(ARQ_DADOS);
