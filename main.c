@@ -48,7 +48,7 @@ int compararChave(const void *chaveA, const void *chaveB) {
     return 0;
 }
 
-void GravarChaveChave(const void *chave, unsigned char *buffer) {
+void GravarChave(const void *chave, unsigned char *buffer) {
     const ChaveFuncionario *k = (const ChaveFuncionario *)chave;
     unsigned char *cursor = buffer;
     memcpy(cursor, k->nome, 100);
@@ -56,7 +56,7 @@ void GravarChaveChave(const void *chave, unsigned char *buffer) {
     memcpy(cursor, &k->nascimento, sizeof(Data));
 }
 
-void *LerChaveChave(const unsigned char *buffer) {
+void *LerChave(const unsigned char *buffer) {
     ChaveFuncionario *k = (ChaveFuncionario *)malloc(sizeof(ChaveFuncionario));
     const unsigned char *cursor = buffer;
     memcpy(k->nome, cursor, 100);
@@ -389,7 +389,7 @@ void exibirMenu(void) {
 }
 
 int main(void) {
-    ArvoreBPlus *arvore = criarArvore(ARQ_INDICE, compararChave, GravarChaveChave, LerChaveChave, tamanhoChave, liberarChave, imprimirChave);
+    ArvoreBPlus *arvore = criarArvore(ARQ_INDICE, compararChave, GravarChave, LerChave, tamanhoChave, liberarChave, imprimirChave);
 
     FILE *dados = abrirArquivoDados(ARQ_DADOS);
     if (dados == NULL)
