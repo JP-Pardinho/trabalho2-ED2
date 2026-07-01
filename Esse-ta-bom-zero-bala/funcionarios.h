@@ -27,7 +27,7 @@ typedef struct {
 typedef struct {
     char nome[100];
     Data nascimento;
-    char nomeMae[100];
+    char noMemoriaae[100];
     char nomePai[100];
     char endereco[200];
     char telefone[20];

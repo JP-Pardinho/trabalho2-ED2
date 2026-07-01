@@ -1,18 +1,31 @@
+/*
+    ESTRUTURA DA DADOS II - AVALIAÇÃO 2
+    GRUPO: 6
+    ALUNOS: 
+        - João Pedro Pardinho Rodrigues
+        - Nicolas Leal Espindula
+        - Gabriel dos Santos Lima
+*/
+
 #include "bplus.h"
 #include <string.h>
 #include <assert.h>
 
+/*
+    Estrutura do no em memoria (usada durante as operacoes; e serializada/
+    deserializada para o formato de disco)
+*/
 typedef struct {
     long self;                                   /* offset deste no no arquivo */
     int eh_folha;
     int n_chaves;
-    unsigned char chaves[BPLUS_MAX_CHAVES + 1][BPLUS_TAM_MAX_CHAVE];
+    unsigned char chaves[MAX_CHAVES + 1][BPLUS_TAM_MAX_CHAVE];
 
-    long filhos[BPLUS_ORDEM + 1];                 /* usado se interno (n_chaves+1 validos) */
+    long filhos[ORDEM + 1];                 /* usado se interno (n_chaves+1 validos) */
 
-    long dados[BPLUS_MAX_CHAVES + 1];             /* usado se folha */
+    long dados[MAX_CHAVES + 1];             /* usado se folha */
     long proxima_folha;                           /* usado se folha */
-} NoMem;
+} noMemoria;
 
 /* Cabecalho do arquivo de indice */
 typedef struct {
@@ -31,45 +44,45 @@ typedef struct {
 static long tamanho_no_disco(void) {
     /* precisa ser fixo e grande o suficiente para o maior layout possivel */
     long tam = sizeof(int) * 2; /* eh_folha, n_chaves */
-    tam += (long)BPLUS_MAX_CHAVES * BPLUS_TAM_MAX_CHAVE;
-    long tam_interno = tam + (long)sizeof(long) * BPLUS_ORDEM;
-    long tam_folha   = tam + (long)sizeof(long) * BPLUS_MAX_CHAVES + sizeof(long);
+    tam += (long)MAX_CHAVES * BPLUS_TAM_MAX_CHAVE;
+    long tam_interno = tam + (long)sizeof(long) * ORDEM;
+    long tam_folha   = tam + (long)sizeof(long) * MAX_CHAVES + sizeof(long);
     return (tam_interno > tam_folha) ? tam_interno : tam_folha;
 }
 
-/* Escreve um NoMem inteiro (layout fixo) em um buffer de bytes */
-static void serializar_no(const NoMem *no, unsigned char *buf, int tam_buf) {
+/* Escreve um noMemoria inteiro (layout fixo) em um buffer de bytes */
+static void serializar_no(const noMemoria *no, unsigned char *buf, int tam_buf) {
     memset(buf, 0, tam_buf);
     unsigned char *p = buf;
     memcpy(p, &no->eh_folha, sizeof(int)); p += sizeof(int);
     memcpy(p, &no->n_chaves, sizeof(int)); p += sizeof(int);
-    memcpy(p, no->chaves, (size_t)BPLUS_MAX_CHAVES * BPLUS_TAM_MAX_CHAVE);
-    p += (size_t)BPLUS_MAX_CHAVES * BPLUS_TAM_MAX_CHAVE;
+    memcpy(p, no->chaves, (size_t)MAX_CHAVES * BPLUS_TAM_MAX_CHAVE);
+    p += (size_t)MAX_CHAVES * BPLUS_TAM_MAX_CHAVE;
 
     if (no->eh_folha) {
-        memcpy(p, no->dados, sizeof(long) * BPLUS_MAX_CHAVES);
-        p += sizeof(long) * BPLUS_MAX_CHAVES;
+        memcpy(p, no->dados, sizeof(long) * MAX_CHAVES);
+        p += sizeof(long) * MAX_CHAVES;
         memcpy(p, &no->proxima_folha, sizeof(long));
     } else {
-        memcpy(p, no->filhos, sizeof(long) * BPLUS_ORDEM);
+        memcpy(p, no->filhos, sizeof(long) * ORDEM);
     }
 }
 
-static void deserializar_no(NoMem *no, const unsigned char *buf) {
+static void deserializar_no(noMemoria *no, const unsigned char *buf) {
     const unsigned char *p = buf;
     memcpy(&no->eh_folha, p, sizeof(int)); p += sizeof(int);
     memcpy(&no->n_chaves, p, sizeof(int)); p += sizeof(int);
-    memcpy(no->chaves, p, (size_t)BPLUS_MAX_CHAVES * BPLUS_TAM_MAX_CHAVE);
-    p += (size_t)BPLUS_MAX_CHAVES * BPLUS_TAM_MAX_CHAVE;
+    memcpy(no->chaves, p, (size_t)MAX_CHAVES * BPLUS_TAM_MAX_CHAVE);
+    p += (size_t)MAX_CHAVES * BPLUS_TAM_MAX_CHAVE;
 
     if (no->eh_folha) {
-        memcpy(no->dados, p, sizeof(long) * BPLUS_MAX_CHAVES);
-        p += sizeof(long) * BPLUS_MAX_CHAVES;
+        memcpy(no->dados, p, sizeof(long) * MAX_CHAVES);
+        p += sizeof(long) * MAX_CHAVES;
         memcpy(&no->proxima_folha, p, sizeof(long));
         /* zera area de filhos para evitar lixo */
         memset(no->filhos, 0, sizeof(no->filhos));
     } else {
-        memcpy(no->filhos, p, sizeof(long) * BPLUS_ORDEM);
+        memcpy(no->filhos, p, sizeof(long) * ORDEM);
         memset(no->dados, 0, sizeof(no->dados));
         no->proxima_folha = BPLUS_NULL;
     }
@@ -94,7 +107,7 @@ static void gravar_cabecalho(BPlusTree *arv) {
     fflush(arv->arquivo);
 }
 
-static void ler_no(BPlusTree *arv, long offset, NoMem *no) {
+static void ler_no(BPlusTree *arv, long offset, noMemoria *no) {
     unsigned char *buf = (unsigned char *)malloc(arv->tam_no);
     fseek(arv->arquivo, offset, SEEK_SET);
     fread(buf, arv->tam_no, 1, arv->arquivo);
@@ -103,7 +116,7 @@ static void ler_no(BPlusTree *arv, long offset, NoMem *no) {
     free(buf);
 }
 
-static void gravar_no(BPlusTree *arv, const NoMem *no) {
+static void gravar_no(BPlusTree *arv, const noMemoria *no) {
     unsigned char *buf = (unsigned char *)malloc(arv->tam_no);
     serializar_no(no, buf, arv->tam_no);
     fseek(arv->arquivo, no->self, SEEK_SET);
@@ -256,7 +269,7 @@ static long descer_para_folha(BPlusTree *arv, const void *chave,
     long atual = arv->raiz;
     int altura = 0;
     while (1) {
-        NoMem no;
+        noMemoria no;
         ler_no(arv, atual, &no);
         if (no.eh_folha) {
             if (altura_saida) *altura_saida = altura;
@@ -281,7 +294,7 @@ static long descer_para_folha(BPlusTree *arv, const void *chave,
 int bplus_buscar(BPlusTree *arv, const void *chave, long *offset_saida) {
     if (arv->raiz == BPLUS_NULL) return 0;
     long folha_off = descer_para_folha(arv, chave, NULL, NULL, NULL);
-    NoMem folha;
+    noMemoria folha;
     ler_no(arv, folha_off, &folha);
     for (int i = 0; i < folha.n_chaves; i++) {
         void *k = buf_para_chave(arv, folha.chaves[i]);
@@ -298,7 +311,7 @@ int bplus_buscar(BPlusTree *arv, const void *chave, long *offset_saida) {
 int bplus_atualizar_offset(BPlusTree *arv, const void *chave, long novo_offset) {
     if (arv->raiz == BPLUS_NULL) return 0;
     long folha_off = descer_para_folha(arv, chave, NULL, NULL, NULL);
-    NoMem folha;
+    noMemoria folha;
     ler_no(arv, folha_off, &folha);
     for (int i = 0; i < folha.n_chaves; i++) {
         void *k = buf_para_chave(arv, folha.chaves[i]);
@@ -319,7 +332,7 @@ int bplus_atualizar_offset(BPlusTree *arv, const void *chave, long novo_offset) 
 
 /* Insere (chave,offset) num no folha ja lido em memoria (assume espaco livre
  * ou sera splitado por quem chamou). Mantém ordenacao. */
-static void inserir_em_folha_ordenado(BPlusTree *arv, NoMem *folha, const void *chave, long offset_dado) {
+static void inserir_em_folha_ordenado(BPlusTree *arv, noMemoria *folha, const void *chave, long offset_dado) {
     int i = folha->n_chaves - 1;
     unsigned char buf_chave[BPLUS_TAM_MAX_CHAVE];
     chave_para_buf(arv, chave, buf_chave);
@@ -340,7 +353,7 @@ static void inserir_em_folha_ordenado(BPlusTree *arv, NoMem *folha, const void *
 
 /* Insere (chave, filho_direito) num no interno ja lido em memoria, na
  * posicao correta, apos o filho_esquerdo. */
-static void inserir_em_interno_ordenado(BPlusTree *arv, NoMem *no, const void *chave, long filho_direito) {
+static void inserir_em_interno_ordenado(BPlusTree *arv, noMemoria *no, const void *chave, long filho_direito) {
     int i = no->n_chaves - 1;
     unsigned char buf_chave[BPLUS_TAM_MAX_CHAVE];
     chave_para_buf(arv, chave, buf_chave);
@@ -367,7 +380,7 @@ typedef struct {
 } ResultadoSplit;
 
 static void criar_nova_raiz(BPlusTree *arv, long filho_esq, const unsigned char *chave_buf, long filho_dir) {
-    NoMem raiz;
+    noMemoria raiz;
     raiz.self = alocar_bloco(arv);
     raiz.eh_folha = 0;
     raiz.n_chaves = 1;
@@ -381,16 +394,16 @@ static void criar_nova_raiz(BPlusTree *arv, long filho_esq, const unsigned char 
     arv->raiz = raiz.self;
 }
 
-/* Faz split de uma folha cheia (apos a insercao lógica ela tem BPLUS_ORDEM
+/* Faz split de uma folha cheia (apos a insercao lógica ela tem ORDEM
  * chaves temporariamente, ou seja, uma acima da capacidade normal). */
-static ResultadoSplit split_folha(BPlusTree *arv, NoMem *folha) {
+static ResultadoSplit split_folha(BPlusTree *arv, noMemoria *folha) {
     ResultadoSplit r;
     r.houve_split = 1;
 
     int total = folha->n_chaves;
     int meio = (total + 1) / 2; /* quantidade que fica na folha esquerda */
 
-    NoMem direita;
+    noMemoria direita;
     direita.self = alocar_bloco(arv);
     direita.eh_folha = 1;
     direita.n_chaves = total - meio;
@@ -414,11 +427,11 @@ static ResultadoSplit split_folha(BPlusTree *arv, NoMem *folha) {
     return r;
 }
 
-/* Faz split de um no interno cheio (apos insercao logica ele tem BPLUS_ORDEM
+/* Faz split de um no interno cheio (apos insercao logica ele tem ORDEM
  * chaves temporariamente). A chave do meio SOBE para o pai e NAO permanece
  * em nenhum dos dois filhos resultantes (semantica classica de B+ para nos
  * internos). */
-static ResultadoSplit split_interno(BPlusTree *arv, NoMem *no) {
+static ResultadoSplit split_interno(BPlusTree *arv, noMemoria *no) {
     ResultadoSplit r;
     r.houve_split = 1;
 
@@ -427,7 +440,7 @@ static ResultadoSplit split_interno(BPlusTree *arv, NoMem *no) {
 
     memcpy(r.chave_promovida, no->chaves[meio], BPLUS_TAM_MAX_CHAVE);
 
-    NoMem direita;
+    noMemoria direita;
     direita.self = alocar_bloco(arv);
     direita.eh_folha = 0;
     direita.n_chaves = total - meio - 1;
@@ -453,7 +466,7 @@ static ResultadoSplit split_interno(BPlusTree *arv, NoMem *no) {
 int bplus_inserir(BPlusTree *arv, const void *chave, long offset_dado) {
     /* Arvore vazia: cria raiz-folha */
     if (arv->raiz == BPLUS_NULL) {
-        NoMem raiz;
+        noMemoria raiz;
         raiz.self = alocar_bloco(arv);
         raiz.eh_folha = 1;
         raiz.n_chaves = 0;
@@ -477,11 +490,11 @@ int bplus_inserir(BPlusTree *arv, const void *chave, long offset_dado) {
     int altura;
     long folha_off = descer_para_folha(arv, chave, pilha_offsets, pilha_idx, &altura);
 
-    NoMem folha;
+    noMemoria folha;
     ler_no(arv, folha_off, &folha);
     inserir_em_folha_ordenado(arv, &folha, chave, offset_dado);
 
-    if (folha.n_chaves <= BPLUS_MAX_CHAVES) {
+    if (folha.n_chaves <= MAX_CHAVES) {
         gravar_no(arv, &folha);
         return 1;
     }
@@ -493,14 +506,14 @@ int bplus_inserir(BPlusTree *arv, const void *chave, long offset_dado) {
     int nivel = altura - 1;
     while (res.houve_split && nivel >= 0) {
         long pai_off = pilha_offsets[nivel];
-        NoMem pai;
+        noMemoria pai;
         ler_no(arv, pai_off, &pai);
 
         void *k = buf_para_chave(arv, res.chave_promovida);
         inserir_em_interno_ordenado(arv, &pai, k, res.novo_no_direito);
         arv->key_free(k);
 
-        if (pai.n_chaves <= BPLUS_MAX_CHAVES) {
+        if (pai.n_chaves <= MAX_CHAVES) {
             gravar_no(arv, &pai);
             res.houve_split = 0;
         } else {
@@ -522,11 +535,11 @@ int bplus_inserir(BPlusTree *arv, const void *chave, long offset_dado) {
  * REMOCAO
  * ---------------------------------------------------------------------------
  * Implementacao com rebalanceamento (emprestimo de irmao ou fusao/merge),
- * respeitando o preenchimento minimo (BPLUS_MIN_CHAVES).
+ * respeitando o preenchimento minimo (MIN_CHAVES).
  * ------------------------------------------------------------------------- */
 
 /* Remove a chave de um no folha (assume que ela existe). */
-static void remover_de_folha(BPlusTree *arv, NoMem *folha, const void *chave) {
+static void remover_de_folha(BPlusTree *arv, noMemoria *folha, const void *chave) {
     int pos = -1;
     for (int i = 0; i < folha->n_chaves; i++) {
         void *k = buf_para_chave(arv, folha->chaves[i]);
@@ -544,7 +557,7 @@ static void remover_de_folha(BPlusTree *arv, NoMem *folha, const void *chave) {
 
 /* Remove a chave na posicao 'pos' de um no interno (removendo tambem o
  * filho a DIREITA dessa chave, indice pos+1). */
-static void remover_de_interno(NoMem *no, int pos) {
+static void remover_de_interno(noMemoria *no, int pos) {
     for (int i = pos; i < no->n_chaves - 1; i++) {
         memcpy(no->chaves[i], no->chaves[i + 1], BPLUS_TAM_MAX_CHAVE);
     }
@@ -565,7 +578,7 @@ int bplus_remover(BPlusTree *arv, const void *chave) {
     int altura;
     long folha_off = descer_para_folha(arv, chave, pilha_offsets, pilha_idx, &altura);
 
-    NoMem folha;
+    noMemoria folha;
     ler_no(arv, folha_off, &folha);
     remover_de_folha(arv, &folha, chave);
 
@@ -580,7 +593,7 @@ int bplus_remover(BPlusTree *arv, const void *chave) {
         return 1;
     }
 
-    if (folha.n_chaves >= BPLUS_MIN_CHAVES) {
+    if (folha.n_chaves >= MIN_CHAVES) {
         gravar_no(arv, &folha);
         /* pode ser necessario atualizar a chave separadora no ancestral se
          * removemos o menor elemento; a busca funciona corretamente mesmo
@@ -591,13 +604,13 @@ int bplus_remover(BPlusTree *arv, const void *chave) {
     }
 
     /* Underflow na folha: precisa pegar emprestado de um irmao ou fazer merge */
-    NoMem atual = folha;
+    noMemoria atual = folha;
     int nivel = altura - 1;
 
     while (1) {
         long pai_off = pilha_offsets[nivel];
         int idx_no_pai = pilha_idx[nivel];
-        NoMem pai;
+        noMemoria pai;
         ler_no(arv, pai_off, &pai);
 
         long irmao_esq_off = (idx_no_pai > 0) ? pai.filhos[idx_no_pai - 1] : BPLUS_NULL;
@@ -607,9 +620,9 @@ int bplus_remover(BPlusTree *arv, const void *chave) {
 
         /* --- tenta emprestar do irmao esquerdo --- */
         if (!resolvido && irmao_esq_off != BPLUS_NULL) {
-            NoMem esq;
+            noMemoria esq;
             ler_no(arv, irmao_esq_off, &esq);
-            if (esq.n_chaves > BPLUS_MIN_CHAVES) {
+            if (esq.n_chaves > MIN_CHAVES) {
                 if (atual.eh_folha) {
                     /* move ultima chave/dado do irmao esquerdo para o inicio de atual */
                     for (int i = atual.n_chaves; i > 0; i--) {
@@ -647,9 +660,9 @@ int bplus_remover(BPlusTree *arv, const void *chave) {
 
         /* --- tenta emprestar do irmao direito --- */
         if (!resolvido && irmao_dir_off != BPLUS_NULL) {
-            NoMem dir;
+            noMemoria dir;
             ler_no(arv, irmao_dir_off, &dir);
-            if (dir.n_chaves > BPLUS_MIN_CHAVES) {
+            if (dir.n_chaves > MIN_CHAVES) {
                 if (atual.eh_folha) {
                     memcpy(atual.chaves[atual.n_chaves], dir.chaves[0], BPLUS_TAM_MAX_CHAVE);
                     atual.dados[atual.n_chaves] = dir.dados[0];
@@ -689,7 +702,7 @@ int bplus_remover(BPlusTree *arv, const void *chave) {
         /* --- nao foi possivel emprestar: faz merge (fusao) --- */
         if (irmao_esq_off != BPLUS_NULL) {
             /* funde 'atual' com irmao esquerdo -> esquerdo absorve atual */
-            NoMem esq;
+            noMemoria esq;
             ler_no(arv, irmao_esq_off, &esq);
 
             if (atual.eh_folha) {
@@ -714,7 +727,7 @@ int bplus_remover(BPlusTree *arv, const void *chave) {
             remover_de_interno(&pai, idx_no_pai - 1);
         } else {
             /* funde irmao direito em 'atual' -> atual absorve direito */
-            NoMem dir;
+            noMemoria dir;
             ler_no(arv, irmao_dir_off, &dir);
 
             if (atual.eh_folha) {
@@ -752,7 +765,7 @@ int bplus_remover(BPlusTree *arv, const void *chave) {
             return 1;
         }
 
-        if (pai.n_chaves >= BPLUS_MIN_CHAVES) {
+        if (pai.n_chaves >= MIN_CHAVES) {
             gravar_no(arv, &pai);
             return 1;
         }
@@ -772,7 +785,7 @@ static long encontrar_primeira_folha(BPlusTree *arv) {
     if (arv->raiz == BPLUS_NULL) return BPLUS_NULL;
     long atual = arv->raiz;
     while (1) {
-        NoMem no;
+        noMemoria no;
         ler_no(arv, atual, &no);
         if (no.eh_folha) return atual;
         atual = no.filhos[0];
@@ -782,7 +795,7 @@ static long encontrar_primeira_folha(BPlusTree *arv) {
 void bplus_percorrer(BPlusTree *arv, bplus_visit_fn visitar, void *ctx) {
     long folha_off = encontrar_primeira_folha(arv);
     while (folha_off != BPLUS_NULL) {
-        NoMem folha;
+        noMemoria folha;
         ler_no(arv, folha_off, &folha);
         for (int i = 0; i < folha.n_chaves; i++) {
             void *k = buf_para_chave(arv, folha.chaves[i]);
@@ -801,7 +814,7 @@ void bplus_buscar_intervalo(BPlusTree *arv, const void *chaveA, const void *chav
     long folha_off = descer_para_folha(arv, chaveA, NULL, NULL, NULL);
 
     while (folha_off != BPLUS_NULL) {
-        NoMem folha;
+        noMemoria folha;
         ler_no(arv, folha_off, &folha);
         for (int i = 0; i < folha.n_chaves; i++) {
             void *k = buf_para_chave(arv, folha.chaves[i]);
@@ -826,7 +839,7 @@ void bplus_buscar_intervalo(BPlusTree *arv, const void *chaveA, const void *chav
 
 static void imprimir_no_recursivo(BPlusTree *arv, long offset, int nivel) {
     if (offset == BPLUS_NULL) return;
-    NoMem no;
+    noMemoria no;
     ler_no(arv, offset, &no);
 
     for (int t = 0; t < nivel; t++) printf("    ");

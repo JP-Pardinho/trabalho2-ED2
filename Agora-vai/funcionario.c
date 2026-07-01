@@ -1,9 +1,11 @@
-/* ============================================================================
- * funcionario.c
- *
- * Implementacao das funcoes de manipulacao do Funcionario, da chave composta
- * (Nome + Data de Nascimento) e do arquivo de dados de funcionarios.
- * ==========================================================================*/
+/*
+    ESTRUTURA DA DADOS II - AVALIAÇÃO 2
+    GRUPO: 6
+    ALUNOS: 
+        - João Pedro Pardinho Rodrigues
+        - Nicolas Leal Espindula
+        - Gabriel dos Santos Lima
+*/
 
 #include "funcionario.h"
 #include <string.h>

@@ -1,29 +1,11 @@
-/* ============================================================================
- * bplus.h
- *
- * Arvore B+ GENERICA em disco.
- *
- * Esta implementacao nao conhece nenhum tipo de dado especifico (ex: Funcionario).
- * Toda a especializacao eh feita atraves de PONTEIROS DE FUNCAO (callbacks) que
- * o modulo cliente (main.c / funcionario.c) fornece no momento da abertura/criacao
- * da arvore.
- *
- * Callbacks exigidos:
- *   - bplus_cmp_fn   : compara duas chaves (retorna <0, 0, >0)
- *   - bplus_size_fn  : retorna o tamanho em bytes de um registro (chave+dados)
- *                      serializado, para que a arvore saiba quanto espaco alocar
- *                      no arquivo de dados.
- *   - bplus_write_fn : serializa um registro (void*) para um buffer de bytes
- *   - bplus_read_fn  : deserializa um buffer de bytes para um registro (void*)
- *   - bplus_key_fn   : extrai a chave de um registro completo (void*)
- *   - bplus_print_fn : imprime um resumo textual de um registro (usado na
- *                      impressao hierarquica da arvore)
- *
- * A arvore armazena, em cada folha, um PONTEIRO DE DISCO (offset em bytes,
- * tipo long) para o registro completo, que fica gravado em um ARQUIVO DE DADOS
- * separado (gerenciado pelo cliente, ex: funcionarios.dat). A arvore em si
- * (arquivo de indice) so guarda CHAVES + OFFSETS, mantendo-se genérica.
- * ==========================================================================*/
+/*
+    ESTRUTURA DA DADOS II - AVALIAÇÃO 2
+    GRUPO: 6
+    ALUNOS: 
+        - João Pedro Pardinho
+        - Nicolas Leal Espindula
+        - Gabriel dos Santos Lima
+*/
 
 #ifndef BPLUS_H
 #define BPLUS_H
@@ -31,26 +13,27 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-/* ---------------------------------------------------------------------------
+/*
  * Configuracao de ordem da arvore.
  * ORDEM = numero maximo de filhos de um no interno.
  * Numero maximo de chaves por no = ORDEM - 1.
- * ------------------------------------------------------------------------- */
-#define BPLUS_ORDEM 5
-#define BPLUS_MAX_CHAVES (BPLUS_ORDEM - 1)
-#define BPLUS_MIN_CHAVES ((BPLUS_ORDEM % 2 == 0) ? (BPLUS_ORDEM/2 - 1) : (BPLUS_ORDEM/2))
+*/
+#define ORDEM 5
+#define MAX_CHAVES (ORDEM - 1)
+#define MIN_CHAVES ((ORDEM % 2 == 0) ? (ORDEM/2 - 1) : (ORDEM/2))
 
 /* Tamanho maximo (em bytes) que uma chave serializada pode ocupar dentro do
  * no da arvore B+. O cliente deve garantir que sua chave serializada nao
- * exceda esse valor. */
+ * exceda esse valor. 
+*/
 #define BPLUS_TAM_MAX_CHAVE 128
 
 /* Ponteiro de disco nulo */
 #define BPLUS_NULL -1L
 
-/* ---------------------------------------------------------------------------
+/*
  * Tipos de callback genericos
- * ------------------------------------------------------------------------- */
+*/
 
 /* Compara duas chaves ja deserializadas (void*). Retorna <0, 0 ou >0. */
 typedef int (*bplus_cmp_fn)(const void *chaveA, const void *chaveB);
@@ -75,9 +58,9 @@ typedef void (*bplus_key_free_fn)(void *chave);
  * da estrutura da arvore). */
 typedef void (*bplus_key_print_fn)(const void *chave);
 
-/* ---------------------------------------------------------------------------
+/*
  * Estrutura de configuracao da arvore (conjunto de callbacks + arquivo)
- * ------------------------------------------------------------------------- */
+*/
 typedef struct {
     FILE *arquivo;              /* arquivo de indice (nos da arvore) em disco */
     char caminho[256];          /* caminho do arquivo de indice */
@@ -96,9 +79,9 @@ typedef struct {
     int tam_no;      /* tamanho fixo (bytes) de um no serializado em disco */
 } BPlusTree;
 
-/* ---------------------------------------------------------------------------
+/*
  * API publica
- * ------------------------------------------------------------------------- */
+*/
 
 /* Cria (ou recria do zero) uma nova arvore B+ em disco no caminho informado.
  * Sobrescreve arquivo existente. */

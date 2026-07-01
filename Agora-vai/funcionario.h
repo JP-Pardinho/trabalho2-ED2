@@ -1,17 +1,11 @@
-/* ============================================================================
- * funcionario.h
- *
- * Estruturas de dados do sistema de RH (Funcionario) e da CHAVE COMPOSTA
- * (Nome + Data de Nascimento) usada para indexar os funcionarios na
- * Arvore B+ generica (bplus.h).
- *
- * Este modulo tambem fornece:
- *   - as funcoes de callback exigidas pela arvore (comparacao, serializacao
- *     de chave, tamanho de chave, etc.)
- *   - as funcoes de manipulacao do ARQUIVO DE DADOS (funcionarios.dat), que
- *     armazena os registros completos de funcionario. A arvore B+ guarda
- *     apenas ChaveComposta -> offset nesse arquivo.
- * ==========================================================================*/
+/*
+    ESTRUTURA DA DADOS II - AVALIAÇÃO 2
+    GRUPO: 6
+    ALUNOS: 
+        - João Pedro Pardinho Rodrigues
+        - Nicolas Leal Espindula
+        - Gabriel dos Santos Lima
+*/
 
 #ifndef FUNCIONARIO_H
 #define FUNCIONARIO_H

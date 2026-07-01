@@ -1,11 +1,11 @@
-/* ============================================================================
- * main.c
- *
- * Sistema de Gestao de RH e Folha de Pagamento.
- * Usa a Arvore B+ generica (bplus.h/bplus.c) como motor de indexacao em
- * disco, com chave composta (Nome + Data de Nascimento) definida em
- * funcionario.h/funcionario.c.
- * ==========================================================================*/
+/*
+    ESTRUTURA DA DADOS II - AVALIAÇÃO 2
+    GRUPO: 6
+    ALUNOS: 
+        - João Pedro Pardinho Rodrigues
+        - Nicolas Leal Espindula
+        - Gabriel dos Santos Lima
+*/
 
 #include <stdio.h>
 #include <stdlib.h>

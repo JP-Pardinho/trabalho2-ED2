@@ -210,7 +210,7 @@ int main() {
                     strcpy(novo.nome, chave_nova.nome);
                     novo.nascimento = chave_nova.nascimento;
                     
-                    printf("Nome da Mae: "); ler_string(novo.nomeMae, 100);
+                    printf("Nome da Mae: "); ler_string(novo.noMemoriaae, 100);
                     printf("Nome do Pai: "); ler_string(novo.nomePai, 100);
                     printf("Morada: "); ler_string(novo.endereco, 200);
                     printf("Telefone: "); ler_string(novo.telefone, 20);
@@ -239,7 +239,7 @@ int main() {
                     printf("\n--- FICHA DO FUNCIONARIO ---\n");
                     printf("Nome: %s\n", f.nome);
                     printf("Nascimento: %02d/%02d/%04d\n", f.nascimento.dia, f.nascimento.mes, f.nascimento.ano);
-                    printf("Filiacao: %s e %s\n", f.nomeMae, f.nomePai);
+                    printf("Filiacao: %s e %s\n", f.noMemoriaae, f.nomePai);
                     printf("Moradia: %s\n", f.endereco);
                     printf("Telefone: %s\n", f.telefone);
                     printf("Estado: %s\n", f.ativo ? "Ativo" : "Inativo");
