@@ -1,58 +1,7 @@
-/* ============================================================================
- * bplus.c
- *
- * Implementacao da Arvore B+ generica em disco.
- *
- * ---------------------------------------------------------------------------
- * FORMATO DO ARQUIVO DE INDICE
- * ---------------------------------------------------------------------------
- * [CABECALHO] (tamanho fixo, offset 0)
- *   long raiz
- *   long topo
- *   long lista_livres
- *
- * [NOS] (a partir de offset = sizeof(Cabecalho), tamanho fixo BPLUS_TAM_NO cada)
- *   Cada "slot" no arquivo pode ser:
- *     - um NoDisco ativo (folha ou interno)
- *     - um bloco livre (reaproveitado apos remocao / merge de nos), que
- *       contem apenas um "proximo livre" (encadeamento de blocos livres)
- *
- * Cada no serializado (NoDisco) tem tamanho FIXO em disco, calculado a
- * partir de BPLUS_ORDEM e do tamanho maximo de chave (BPLUS_TAM_MAX_CHAVE).
- * Isso permite acesso direto via fseek/fread/fwrite e reaproveitamento
- * trivial de blocos livres (todos os blocos tem o mesmo tamanho).
- *
- * ---------------------------------------------------------------------------
- * ESTRUTURA DE UM NO EM DISCO (NoDisco)
- * ---------------------------------------------------------------------------
- *   int eh_folha;
- *   int n_chaves;
- *   unsigned char chaves[BPLUS_MAX_CHAVES][BPLUS_TAM_MAX_CHAVE];
- *
- *   -- Se for NO INTERNO:
- *        long filhos[BPLUS_ORDEM];       (n_chaves+1 filhos validos)
- *
- *   -- Se for FOLHA:
- *        long dados[BPLUS_MAX_CHAVES];   (offset do registro no arq. de dados)
- *        long proxima_folha;             (encadeamento de folhas, esq->dir)
- *
- * Usamos uma UNIAO logica: reservamos espaco suficiente para o maior caso
- * (max(filhos, dados+proxima_folha)) dentro do mesmo layout de arquivo.
- * ==========================================================================*/
-
 #include "bplus.h"
 #include <string.h>
 #include <assert.h>
 
-/* ---------------------------------------------------------------------------
- * Estrutura do no em memoria (usada durante as operacoes; e serializada/
- * deserializada para o formato de disco)
- * ------------------------------------------------------------------------- */
-/* IMPORTANTE: os vetores abaixo tem capacidade para BPLUS_MAX_CHAVES+1 chaves
- * e BPLUS_ORDEM+1 filhos/dados. Isso e necessario porque, durante a insercao,
- * o no EM MEMORIA temporariamente recebe uma chave (ou filho) acima da sua
- * capacidade normal antes de ser splitado — esse estado transitorio nunca e
- * gravado em disco (o disco so guarda nos ja splitados, dentro do limite). */
 typedef struct {
     long self;                                   /* offset deste no no arquivo */
     int eh_folha;

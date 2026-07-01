@@ -4,8 +4,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-// Substituímos o bool do seu util.h pela biblioteca padrão
 #include <stdbool.h>
 
 typedef enum { 
@@ -18,6 +16,12 @@ typedef enum {
 // =======================================================
 // Função injetada pelo main.c para comparar chaves desconhecidas
 typedef int (*ComparaChaveFunc)(const void *a, const void *b);
+
+// Chamado pela busca por intervalo quando encontra um registro válido
+typedef void (*ProcessaRegistroFunc)(void *chave, int index_registro);
+
+// Chamado pela impressão da árvore para formatar a chave no printf
+typedef void (*ImprimeChaveFunc)(void *chave);
 
 // =======================================================
 // Estruturas de Controle (Antigo BP_Tree e Pagina)
@@ -73,29 +77,26 @@ bool inserir_registro(ArvoreBPlus *arvore, void *chave, int index_registro);
 bool buscar_registro(ArvoreBPlus *arvore, void *chave, int *index_retorno);
 bool remover_registro(ArvoreBPlus *arvore, void *chave);
 
+void buscar_intervalo(ArvoreBPlus *arvore, void *chave_inicio, void *chave_fim, ProcessaRegistroFunc processar);
+void imprimir_arvore(ArvoreBPlus *arvore, ImprimeChaveFunc imprime_chave);
 
 // =======================================================
-// Funções Internas de Disco (Baseadas na sua lógica)
+// Funções Internas de Disco e Memória
 // =======================================================
 PaginaRAM alocar_pagina_ram(ArvoreBPlus *arvore);
 void liberar_pagina_ram(PaginaRAM *pag);
 
 void ler_pagina(ArvoreBPlus *arvore, int index, PaginaRAM *pag);
 void gravar_pagina(ArvoreBPlus *arvore, int index, PaginaRAM *pag);
+int buscar_pagina_livre(ArvoreBPlus *arvore);
 
 // =======================================================
-// Novos Callbacks para Impressão e Intervalo
+// Funções Internas de Manipulação da Árvore
 // =======================================================
-// Chamado pela busca por intervalo quando encontra um registo válido
-typedef void (*ProcessaRegistroFunc)(void *chave, int index_registro);
+void inserir_e_ordenar_ram(ArvoreBPlus *arvore, PaginaRAM *pag, void *nova_chave, int novo_filho);
+void fix_overflow(ArvoreBPlus *arvore, PaginaRAM *pagina);
 
-// Chamado pela impressão da árvore para formatar a chave no printf
-typedef void (*ImprimeChaveFunc)(void *chave);
-
-// =======================================================
-// Novas Funções da API Pública
-// =======================================================
-void buscar_intervalo(ArvoreBPlus *arvore, void *chave_inicio, void *chave_fim, ProcessaRegistroFunc processar);
-void imprimir_arvore(ArvoreBPlus *arvore, ImprimeChaveFunc imprime_chave);
+void remover_e_deslocar_ram(ArvoreBPlus *arvore, PaginaRAM *pag, int index_remocao);
+void fix_underflow(ArvoreBPlus *arvore, PaginaRAM *pagina);
 
 #endif // BPLUS_TREE_H

@@ -1,6 +1,7 @@
 #ifndef Bplus_H
 
 #define ORDEM 4
+#include <stdbool.h>
 
 typedef struct {
     int ordem, qtdPaginas, raiz; //raiz recebe -1 na criação do cabeçalho == VAZIA
@@ -8,7 +9,7 @@ typedef struct {
 } Cabecalho;
 
 typedef struct Pagina{
-    unsigned char chave[ORDEM + 1][100];
+    void* chave[ORDEM + 1];
     int filho[ORDEM + 2];
     int pai; //pai do vetor de Chave
     int indice; //endereço da página
@@ -22,19 +23,19 @@ typedef struct Pagina{
 Pagina *criaPagina(); // eduardo
 void inicializarPagina(Pagina *pagina, int indice, int tipo); // eduardo
 void destroiPagina(Pagina *p); // eduardo
-void inserirElemento(Pagina *p, const void *chave, int indice); // eduardo
-void removerElemento(Pagina *p, const void *chave, int (*comparar)(const void*, const void*));
-void verificarOverflow(FILE *arquivo, Pagina *p); // eduardo
-void verificarUnderflow(FILE *arquivo, Pagina *pagina);
-void ordenarPaginaFolha(Pagina *p); // eduardo
+void inserirElemento(Pagina *p, const void *chave, int indice, int (*comparar)(const void *, const void *)); // eduardo
+int removerElemento(Pagina *p, const void *chave, int (*comparar)(const void *, const void *));
+void verificarOverflow(Pagina *p, int (*comparar)(const void *, const void *) ); // eduardo
+void verificarUnderflow(Pagina *pagina);
+void ordenarPaginaFolha(Pagina *p, int (*comparar)(const void *, const void *)); // eduardo
 int buscarPaginaLivre();
 
 // funções para a árvore
-void inicializarArvore(char* nomeArquivo, int ordem, int tamChave, int (*comparar)(const void*, const void*));
+void inicializarArvore(int ordem, int tamChave, int (*comparar)(const void*, const void*));
 void imprimirArvore();
 int buscarChave(const void *chave, int (*comparar)(const void*, const void*));
-void inserirChave(const void *chave, int resgistro);
+void inserirChave(const void *chave, int enderecoRegistro);
 void deletarChave(const void *chave);
-void imprimirChavesIntervalo(const void *chave_min, const void *chave_max);
+int* buscarChavesIntervalo(const void *chave_min, const void *chave_max, int *qtEncontrados, int (*comparar)(const void*, const void*));
 
 #endif
