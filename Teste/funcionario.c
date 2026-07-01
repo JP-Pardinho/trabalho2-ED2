@@ -46,15 +46,33 @@ void imprimirFichaResumida(const Funcionario *f) {
 
 void imprimirFichaCompleta(const Funcionario *f) {
     imprimirFichaResumida(f);
-    printf("Historico de pagamentos (%d registrados):\n", f->qtdPagamentos);
-    if (f->qtdPagamentos == 0) {
-        printf("   (nenhum pagamento registrado ainda)\n");
-    }
+
+    printf("Historico de pagamentos (ultimos 12 meses):\n");
+    int exibidos = 0;
+    
+    // Data de referência atual: 01/07/2026
+    int anoAtual = 2026;
+    int mesAtual = 7;
+
     for (int i = 0; i < f->qtdPagamentos; i++) {
-        printf("   %02d/%02d/%04d - R$ %.2f\n",
-               f->historico[i].dataPagamento.dia,
-               f->historico[i].dataPagamento.mes,
-               f->historico[i].dataPagamento.ano,
-               f->historico[i].valor);
+        int pagAno = f->historico[i].dataPagamento.ano;
+        int pagMes = f->historico[i].dataPagamento.mes;
+
+        // Calcula a diferença em meses de forma linear
+        int diffMeses = ((anoAtual - pagAno) * 12) + (mesAtual - pagMes);
+
+        // Se a diferença estiver entre 0 e 11, o pagamento é recente
+        if (diffMeses >= 0 && diffMeses < 12) {
+            printf("   %02d/%02d/%04d - R$ %.2f\n",
+                   f->historico[i].dataPagamento.dia,
+                   pagMes,
+                   pagAno,
+                   f->historico[i].valor);
+            exibidos++;
+        }
+    }
+    
+    if (exibidos == 0) {
+        printf("   (nenhum pagamento registrado nos ultimos 12 meses)\n");
     }
 }

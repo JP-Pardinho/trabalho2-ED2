@@ -90,11 +90,18 @@ int lerInteiro(void) {
     return atoi(buffer);
 }
 
-void lerData(const char *rotulo, Data *d) {
+static void lerData(const char *rotulo, Data *d) {
     printf("%s (dia mes ano): ", rotulo);
-    char buffer[32];
+    char buffer[64];
     lerLinha(buffer, sizeof(buffer));
-    sscanf(buffer, "%d %d %d", &d->dia, &d->mes, &d->ano);
+    
+    // Inicializa com 0 para evitar valores estranhos se o sscanf falhar
+    d->dia = 0; d->mes = 0; d->ano = 0;
+    
+    // Tenta ler e verifica se leu 3 inteiros
+    if (sscanf(buffer, "%d %d %d", &d->dia, &d->mes, &d->ano) != 3) {
+        printf("Formato invalido! Use: dia mes ano\n");
+    }
 }
 
 void coletarResultado(const void *chave, long endereco, void *contexto) {
@@ -201,7 +208,33 @@ void opcaoInserir(ArvoreBPlus *arv, FILE *dados) {
     lerLinha(f.telefone, sizeof(f.telefone));
     lerData("Data de contratacao", &f.dataContratacao);
     f.ativo = true;
-    f.qtdPagamentos = 0; 
+    f.qtdPagamentos = 0;
+
+    // Lógica corrigida: Preenche os últimos 12 meses retroativamente a partir de 07/2026
+    int mesRef = 7;
+    int anoRef = 2026;
+
+    for (int m = 0; m < 12; m++) {
+        int mes = mesRef - m;
+        int ano = anoRef;
+        if (mes <= 0) {
+            mes += 12;
+            ano -= 1;
+        }
+
+        // Verifica se o mês calculado é anterior à data de contratação
+        // Para simplificar, convertemos para um formato numérico comparável (AAAAMM)
+        long dataPagNum = (long)ano * 100L + (long)mes;
+        long dataContrNum = (long)f.dataContratacao.ano * 100L + (long)f.dataContratacao.mes;
+        
+        if (dataPagNum >= dataContrNum) {
+            f.historico[m].dataPagamento.dia = 1;
+            f.historico[m].dataPagamento.mes = mes;
+            f.historico[m].dataPagamento.ano = ano;
+            f.historico[m].valor = 2500.00;
+            f.qtdPagamentos++;
+        }
+    } 
     
     long novoEndereco = gravarFuncionario(dados, &f);
     inserirChave(arv, chave, novoEndereco);
