@@ -84,10 +84,7 @@ void atualizarCabecalho(ArvoreBPlus *arv) {
     fflush(arv->arquivoDisco);
 }
 
-ArvoreBPlus* criarArvore(const char *caminho, 
-                         CompararChavesFn cmp, SerializarChaveFn ser, 
-                         DeserializarChaveFn des, TamanhoChaveFn tam, 
-                         LiberarChaveFn lib, ImprimirChaveFn imp) {
+ArvoreBPlus* criarArvore(const char *caminho, CompararChavesFn cmp, SerializarChaveFn ser, DeserializarChaveFn des, TamanhoChaveFn tam, LiberarChaveFn lib, ImprimirChaveFn imp) {
     
     ArvoreBPlus *arv = (ArvoreBPlus *)malloc(sizeof(ArvoreBPlus));
     arv->comparar = cmp;

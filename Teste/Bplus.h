@@ -34,10 +34,7 @@ typedef struct {
     int tamanhoNoBytes; 
 } ArvoreBPlus;
 
-ArvoreBPlus* criarArvore(const char *caminhoArquivo, 
-                         CompararChavesFn cmp, SerializarChaveFn ser, 
-                         DeserializarChaveFn des, TamanhoChaveFn tam, 
-                         LiberarChaveFn lib, ImprimirChaveFn imp);
+ArvoreBPlus* criarArvore(const char *caminhoArquivo, CompararChavesFn cmp, SerializarChaveFn ser, DeserializarChaveFn des, TamanhoChaveFn tam, LiberarChaveFn lib, ImprimirChaveFn imp);
 
 void fecharArvore(ArvoreBPlus *arvore);
 
