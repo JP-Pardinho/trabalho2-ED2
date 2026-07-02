@@ -1,3 +1,12 @@
+/*
+    ESTRUTURA DA DADOS II - AVALIAÇÃO 2
+    PROFESSORA: Dra. Luciana Lee
+    ALUNOS: 
+        - 2023201331 | Gabriel dos Santos Lima
+        - 2023201073 | João Pedro Pardinho Rodrigues
+        - 2023200798 | Nicolas Leal Espindula
+*/
+
 #ifndef BPLUS_H
 #define BPLUS_H
 

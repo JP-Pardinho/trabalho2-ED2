@@ -1,3 +1,12 @@
+/*
+    ESTRUTURA DA DADOS II - AVALIAÇÃO 2
+    PROFESSORA: Dra. Luciana Lee
+    ALUNOS: 
+        - 2023201331 | Gabriel dos Santos Lima
+        - 2023201073 | João Pedro Pardinho Rodrigues
+        - 2023200798 | Nicolas Leal Espindula
+*/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -18,6 +27,15 @@ typedef struct {
 // ============================================================================
 // CALLBACKS DA CHAVE MOVIDOS AQUI
 // ============================================================================
+/**
+ * @brief Cria e inicializa uma nova ChaveFuncionario.
+ * 
+ * @param nome (const char*) Nome do funcionário.
+ * @param dia (int) Dia de nascimento.
+ * @param mes (int) Mês de nascimento.
+ * @param ano (int) Ano de nascimento.
+ * @return (ChaveFuncionario*) Ponteiro para a chave alocada e inicializada.
+ */
 ChaveFuncionario *criarChave(const char *nome, int dia, int mes, int ano) {
     ChaveFuncionario *k = (ChaveFuncionario *)malloc(sizeof(ChaveFuncionario));
     memset(k, 0, sizeof(ChaveFuncionario));
@@ -28,10 +46,23 @@ ChaveFuncionario *criarChave(const char *nome, int dia, int mes, int ano) {
     return k;
 }
 
+/**
+ * @brief Converte uma Data para um número (formato numérico de 8 dígitos) a fim de facilitar comparações.
+ * 
+ * @param d (Data) Estrutura contendo a data.
+ * @return (long) A representação numérica da data (ex: 20231201 para 01/12/2023).
+ */
 long dataParaNumero(Data d) {
     return (long)d.ano * 10000L + (long)d.mes * 100L + (long)d.dia;
 }
 
+/**
+ * @brief Compara duas chaves de funcionários por nome e em seguida pela data de nascimento.
+ * 
+ * @param chaveA (const void*) Primeira chave a ser comparada.
+ * @param chaveB (const void*) Segunda chave a ser comparada.
+ * @return (int) Menor que 0 se A < B, 0 se A == B, e maior que 0 se A > B.
+ */
 int compararChave(const void *chaveA, const void *chaveB) {
     const ChaveFuncionario *a = (const ChaveFuncionario *)chaveA;
     const ChaveFuncionario *b = (const ChaveFuncionario *)chaveB;
@@ -48,6 +79,13 @@ int compararChave(const void *chaveA, const void *chaveB) {
     return 0;
 }
 
+/**
+ * @brief Serializa (grava) uma chave em um buffer de bytes.
+ * 
+ * @param chave (const void*) Ponteiro para a chave original.
+ * @param buffer (unsigned char*) O buffer de destino onde os bytes serão escritos.
+ * @return (void) Não retorna valor.
+ */
 void GravarChaveFunc(const void *chave, unsigned char *buffer) {
     const ChaveFuncionario *k = (const ChaveFuncionario *)chave;
     unsigned char *cursor = buffer;
@@ -56,6 +94,12 @@ void GravarChaveFunc(const void *chave, unsigned char *buffer) {
     memcpy(cursor, &k->nascimento, sizeof(Data));
 }
 
+/**
+ * @brief Desserializa (lê) uma chave a partir de um buffer de bytes.
+ * 
+ * @param buffer (const unsigned char*) Buffer de bytes que contém os dados da chave.
+ * @return (void*) Ponteiro genérico para a nova chave alocada.
+ */
 void *LerChaveFunc(const unsigned char *buffer) {
     ChaveFuncionario *k = (ChaveFuncionario *)malloc(sizeof(ChaveFuncionario));
     const unsigned char *cursor = buffer;
@@ -65,14 +109,31 @@ void *LerChaveFunc(const unsigned char *buffer) {
     return k;
 }
 
+/**
+ * @brief Retorna o tamanho em bytes ocupado pela chave (nome + data).
+ * 
+ * @return (int) Tamanho exato de uma chave em bytes.
+ */
 int tamanhoChave(void) {
     return 100 + sizeof(Data);
 }
 
+/**
+ * @brief Libera da memória uma chave previamente alocada.
+ * 
+ * @param chave (void*) Ponteiro para a chave a ser liberada.
+ * @return (void) Não retorna valor.
+ */
 void liberarChave(void *chave) {
     free(chave);
 }
 
+/**
+ * @brief Imprime as informações de uma chave no terminal (usado em debugs e impressões da árvore).
+ * 
+ * @param chave (const void*) Ponteiro para a chave que será impressa.
+ * @return (void) Não retorna valor.
+ */
 void imprimirChave(const void *chave) {
     const ChaveFuncionario *k = (const ChaveFuncionario *)chave;
     printf("%s (%02d/%02d/%04d)", k->nome, k->nascimento.dia, k->nascimento.mes, k->nascimento.ano);
@@ -81,6 +142,13 @@ void imprimirChave(const void *chave) {
 // ============================================================================
 // OPÇÕES DO SISTEMA E AUXILIARES
 // ============================================================================
+/**
+ * @brief Lê uma linha de texto da entrada padrão, removendo a quebra de linha final.
+ * 
+ * @param destino (char*) Buffer onde a string será armazenada.
+ * @param tamanho (int) Tamanho máximo do buffer.
+ * @return (void) Não retorna valor.
+ */
 void lerLinha(char *destino, int tamanho) {
     if (fgets(destino, tamanho, stdin) != NULL)
     {
@@ -88,12 +156,24 @@ void lerLinha(char *destino, int tamanho) {
     }
 }
 
+/**
+ * @brief Lê um número inteiro da entrada padrão de forma segura.
+ * 
+ * @return (int) O número inteiro digitado.
+ */
 int lerInteiro(void) {
     char buffer[32];
     lerLinha(buffer, sizeof(buffer)); 
     return atoi(buffer);
 }
 
+/**
+ * @brief Lê uma data fornecida pelo usuário na entrada padrão e a formata.
+ * 
+ * @param rotulo (const char*) Mensagem que será exibida para solicitar a data.
+ * @param d (Data*) Ponteiro para a estrutura Data onde será armazenada a data lida.
+ * @return (void) Não retorna valor.
+ */
 static void lerData(const char *rotulo, Data *d) {
     printf("%s (dia mes ano): ", rotulo);
     char buffer[64];
@@ -111,6 +191,14 @@ static void lerData(const char *rotulo, Data *d) {
     }
 }
 
+/**
+ * @brief Callback utilizado pela busca em intervalo para coletar múltiplos resultados.
+ * 
+ * @param chave (const void*) Chave encontrada na busca.
+ * @param endereco (long) Endereço do registro correspondente.
+ * @param contexto (void*) Ponteiro para a estrutura ListaResultados onde serão guardados os dados.
+ * @return (void) Não retorna valor.
+ */
 void coletarResultado(const void *chave, long endereco, void *contexto) {
     ListaResultados *lista = (ListaResultados *)contexto;
     if (lista->qtd < MAX_HOMONIMOS)
@@ -122,6 +210,14 @@ void coletarResultado(const void *chave, long endereco, void *contexto) {
     }
 }
 
+/**
+ * @brief Busca e coleta todos os funcionários com um determinado nome na árvore B+.
+ * 
+ * @param arv (ArvoreBPlus*) Ponteiro para a estrutura da árvore.
+ * @param nome (const char*) Nome a ser buscado.
+ * @param lista (ListaResultados*) Lista onde os resultados encontrados serão salvos.
+ * @return (void) Não retorna valor.
+ */
 void buscarTodosPorNome(ArvoreBPlus *arv, const char *nome, ListaResultados *lista) {
     lista->qtd = 0;
     ChaveFuncionario *chaveA = criarChave(nome, 0, 0, 0);
@@ -131,6 +227,12 @@ void buscarTodosPorNome(ArvoreBPlus *arv, const char *nome, ListaResultados *lis
     free(chaveB);
 }
 
+/**
+ * @brief Solicita que o usuário escolha um entre vários homônimos retornados na busca.
+ * 
+ * @param lista (const ListaResultados*) Lista de resultados de funcionários homônimos.
+ * @return (int) O índice da escolha feita pelo usuário na lista, ou -1 se não encontrar a data informada.
+ */
 int escolherHomonimo(const ListaResultados *lista) {
     printf("\nForam encontrados %d funcionarios com esse nome:\n", lista->qtd);
     for (int i = 0; i < lista->qtd; i++)
@@ -159,6 +261,13 @@ int escolherHomonimo(const ListaResultados *lista) {
     return -1;
 }
 
+/**
+ * @brief Lida com a opção de inserção no menu, coletando os dados e inserindo no sistema.
+ * 
+ * @param arv (ArvoreBPlus*) Ponteiro para a árvore B+.
+ * @param dados (FILE*) Ponteiro para o arquivo de dados.
+ * @return (void) Não retorna valor.
+ */
 void opcaoInserir(ArvoreBPlus *arv, FILE *dados) {
     char nome[100];
     Data nascimento;
@@ -261,6 +370,13 @@ void opcaoInserir(ArvoreBPlus *arv, FILE *dados) {
     free(chave);
 }
 
+/**
+ * @brief Lida com a opção de busca no menu, procurando e exibindo os dados de um funcionário.
+ * 
+ * @param arv (ArvoreBPlus*) Ponteiro para a árvore B+.
+ * @param dados (FILE*) Ponteiro para o arquivo de dados.
+ * @return (void) Não retorna valor.
+ */
 void opcaoBuscar(ArvoreBPlus *arv, FILE *dados) {
     char nome[100];
     printf("\n--- Buscar Funcionario ---\n");
@@ -291,6 +407,13 @@ void opcaoBuscar(ArvoreBPlus *arv, FILE *dados) {
     imprimirFichaCompleta(&f);
 }
 
+/**
+ * @brief Lida com a opção de exclusão no menu, permitindo remover um funcionário do índice.
+ * 
+ * @param arv (ArvoreBPlus*) Ponteiro para a árvore B+.
+ * @param dados (FILE*) Ponteiro para o arquivo de dados.
+ * @return (void) Não retorna valor.
+ */
 void opcaoExcluir(ArvoreBPlus *arv, FILE *dados) {
     char nome[100];
     printf("\n--- Excluir Funcionario ---\n");
@@ -342,6 +465,14 @@ typedef struct {
     int contador;
 } ContextoIntervalo;
 
+/**
+ * @brief Função de callback para imprimir informações resumidas de funcionários encontrados em um intervalo.
+ * 
+ * @param chave (const void*) Chave encontrada durante a travessia.
+ * @param endereco (long) Endereço no arquivo de dados.
+ * @param contexto (void*) Estrutura de contexto contendo arquivo e contador.
+ * @return (void) Não retorna valor.
+ */
 void imprimirLinhaIntervalo(const void *chave, long endereco, void *contexto) {
     (void)chave;
 
@@ -352,6 +483,13 @@ void imprimirLinhaIntervalo(const void *chave, long endereco, void *contexto) {
            f.nascimento.dia, f.nascimento.mes, f.nascimento.ano);
 }
 
+/**
+ * @brief Lida com a opção de listagem por intervalo no menu, exibindo funcionários num intervalo de nomes.
+ * 
+ * @param arv (ArvoreBPlus*) Ponteiro para a árvore B+.
+ * @param dados (FILE*) Ponteiro para o arquivo de dados.
+ * @return (void) Não retorna valor.
+ */
 void opcaoIntervalo(ArvoreBPlus *arv, FILE *dados) {
     char nomeA[100], nomeB[100];
     printf("\n--- Listagem por Intervalo ---\n");
@@ -375,6 +513,11 @@ void opcaoIntervalo(ArvoreBPlus *arv, FILE *dados) {
     free(chaveB);
 }
 
+/**
+ * @brief Imprime as opções do menu principal na tela.
+ * 
+ * @return (void) Não retorna valor.
+ */
 void exibirMenu(void) {
     printf("\n=================================================\n");
     printf("   SISTEMA DE GESTAO DE RH E FOLHA DE PAGAMENTO\n");
@@ -388,6 +531,11 @@ void exibirMenu(void) {
     printf("Escolha uma opcao: ");
 }
 
+/**
+ * @brief Ponto de entrada do programa. Inicializa o sistema e exibe o menu principal.
+ * 
+ * @return (int) Retorna 0 em caso de sucesso, ou 1 em caso de falha.
+ */
 int main(void) {
     ArvoreBPlus *arvore = criarArvore(ARQ_INDICE, compararChave, GravarChaveFunc, LerChaveFunc, tamanhoChave, liberarChave, imprimirChave);
 

@@ -1,3 +1,12 @@
+/*
+    ESTRUTURA DA DADOS II - AVALIAÇÃO 2
+    PROFESSORA: Dra. Luciana Lee
+    ALUNOS: 
+        - 2023201331 | Gabriel dos Santos Lima
+        - 2023201073 | João Pedro Pardinho Rodrigues
+        - 2023200798 | Nicolas Leal Espindula
+*/
+
 #include "Bplus.h"
 
 typedef struct {
@@ -24,6 +33,11 @@ typedef struct {
 void tratarOverflow(ArvoreBPlus *arv, Pagina *folha, long folhaEnd, int altura, long pilhaEnderecos[]);
 bool tratarUnderflow(ArvoreBPlus *arv, Pagina *atual, int nivel, long pilhaEnderecos[], int pilhaIndices[]);
 
+/**
+ *  Calcula o tamanho máximo em bytes necessário para uma página (nó) da árvore B+.
+ * 
+ *  retorno: (long) O tamanho calculado em bytes.
+ */
 long calcularTamanhoPagina() {
     long tamanhoBase = sizeof(bool) + sizeof(int);
     tamanhoBase += (MAX_CHAVES * TAM_MAX_CHAVE);
@@ -34,6 +48,13 @@ long calcularTamanhoPagina() {
     return (tamanhoInterno > tamanhoFolha) ? tamanhoInterno : tamanhoFolha;
 }
 
+/**
+ *  Salva uma página em disco no seu respectivo endereço.
+ * 
+ *  parametro: arv (ArvoreBPlus*) Ponteiro para a estrutura da árvore.
+ *  parametro: pag (const Pagina*) Ponteiro para a página que será salva.
+ *  retorno: (void) Não retorna valor.
+ */
 void salvarPaginaDisco(ArvoreBPlus *arv, const Pagina *pag) {
     unsigned char *buffer = (unsigned char *)calloc(1, arv->tamanhoNoBytes);
     unsigned char *cursor = buffer;
@@ -62,6 +83,14 @@ void salvarPaginaDisco(ArvoreBPlus *arv, const Pagina *pag) {
     free(buffer);
 }
 
+/**
+ *  Carrega uma página do disco para a memória a partir de um endereço específico.
+ * 
+ *  parametro: arv (ArvoreBPlus*) Ponteiro para a estrutura da árvore.
+ *  parametro: endereco (long) Endereço (offset) da página no arquivo.
+ *  parametro: pag (Pagina*) Ponteiro para a estrutura Pagina onde os dados serão armazenados.
+ *  retorno: (void) Não retorna valor.
+ */
 void carregarPaginaDisco(ArvoreBPlus *arv, long endereco, Pagina *pag) {
     unsigned char *buffer = (unsigned char *)malloc(arv->tamanhoNoBytes);
 
@@ -94,6 +123,12 @@ void carregarPaginaDisco(ArvoreBPlus *arv, long endereco, Pagina *pag) {
     free(buffer);
 }
 
+/**
+ *  Atualiza o cabeçalho da árvore no arquivo de disco.
+ * 
+ *  parametro: arv (ArvoreBPlus*) Ponteiro para a estrutura da árvore.
+ *  retorno: (void) Não retorna valor.
+ */
 void atualizarCabecalho(ArvoreBPlus *arv) {
     CabecalhoDisco cab = {arv->enderecoRaiz, arv->proximoBlocoLivre};
     fseek(arv->arquivoDisco, 0, SEEK_SET);
@@ -101,6 +136,18 @@ void atualizarCabecalho(ArvoreBPlus *arv) {
     fflush(arv->arquivoDisco);
 }
 
+/**
+ *  Inicializa a árvore B+ carregando uma existente do disco ou criando uma nova.
+ * 
+ *  parametro: caminho (const char*) Caminho para o arquivo da árvore no disco.
+ *  parametro: cmp (CompararChaves) Função para comparar duas chaves.
+ *  parametro: gravar (GravarChave) Função para serializar uma chave em um buffer.
+ *  parametro: ler (LerChave) Função para desserializar uma chave de um buffer.
+ *  parametro: tam (TamanhoChave) Função que retorna o tamanho da chave em bytes.
+ *  parametro: lib (LiberarChave) Função para liberar a memória de uma chave.
+ *  parametro: imp (ImprimirChave) Função para imprimir uma chave.
+ *  retorno: (ArvoreBPlus*) Ponteiro para a árvore criada ou carregada.
+ */
 ArvoreBPlus *criarArvore(const char *caminho, CompararChaves cmp, GravarChave gravar, LerChave ler, TamanhoChave tam, LiberarChave lib, ImprimirChave imp) {
 
     ArvoreBPlus *arv = (ArvoreBPlus *)malloc(sizeof(ArvoreBPlus));
@@ -133,6 +180,12 @@ ArvoreBPlus *criarArvore(const char *caminho, CompararChaves cmp, GravarChave gr
     return arv;
 }
 
+/**
+ *  Atualiza o cabeçalho e fecha o arquivo em disco, liberando a estrutura da árvore.
+ * 
+ *  parametro: arv (ArvoreBPlus*) Ponteiro para a árvore a ser fechada.
+ *  retorno: (void) Não retorna valor.
+ */
 void fecharArvore(ArvoreBPlus *arv) {
     if (!arv)
         return;
@@ -141,6 +194,14 @@ void fecharArvore(ArvoreBPlus *arv) {
     free(arv);
 }
 
+/**
+ *  Busca uma chave na árvore B+ e opcionalmente retorna seu endereço no arquivo de dados.
+ * 
+ *  parametro: arv (ArvoreBPlus*) Ponteiro para a estrutura da árvore.
+ *  parametro: chave (const void*) Ponteiro para a chave a ser buscada.
+ *  parametro: enderecoRetorno (long*) Ponteiro onde o endereço do registro será retornado (opcional, pode ser NULL).
+ *  retorno: (bool) True se a chave for encontrada, False caso contrário.
+ */
 bool buscarChave(ArvoreBPlus *arv, const void *chave, long *enderecoRetorno) {
     if (arv->enderecoRaiz == -1)
         return false;
@@ -184,12 +245,28 @@ bool buscarChave(ArvoreBPlus *arv, const void *chave, long *enderecoRetorno) {
     }
 }
 
+/**
+ *  Aloca o endereço para uma nova página (nó) na árvore.
+ * 
+ *  parametro: arv (ArvoreBPlus*) Ponteiro para a estrutura da árvore.
+ *  retorno: (long) O endereço (offset) alocado para a nova página.
+ */
 long alocarPagina(ArvoreBPlus *arv) {
     long endereco = arv->proximoBlocoLivre;
     arv->proximoBlocoLivre += arv->tamanhoNoBytes;
     return endereco;
 }
 
+/**
+ *  Desce pela árvore a partir da raiz até encontrar a folha apropriada para uma chave.
+ * 
+ *  parametro: arv (ArvoreBPlus*) Ponteiro para a estrutura da árvore.
+ *  parametro: chave (const void*) Ponteiro para a chave buscada.
+ *  parametro: pilhaEnderecos (long*) Pilha que armazena os endereços dos nós visitados (opcional).
+ *  parametro: pilhaIndices (int*) Pilha que armazena os índices seguidos nos nós (opcional).
+ *  parametro: altura (int*) Ponteiro onde será armazenada a altura da árvore percorrida.
+ *  retorno: (long) O endereço da página folha encontrada.
+ */
 long descerParaFolha(ArvoreBPlus *arv, const void *chave, long *pilhaEnderecos, int *pilhaIndices, int *altura) {
     long endAtual = arv->enderecoRaiz;
     *altura = 0;
@@ -221,6 +298,15 @@ long descerParaFolha(ArvoreBPlus *arv, const void *chave, long *pilhaEnderecos, 
     }
 }
 
+/**
+ *  Insere de forma ordenada uma chave e seu registro em uma página folha.
+ * 
+ *  parametro: arv (ArvoreBPlus*) Ponteiro para a estrutura da árvore.
+ *  parametro: folha (Pagina*) Ponteiro para a página folha onde a inserção ocorrerá.
+ *  parametro: chave (const void*) Ponteiro para a chave a ser inserida.
+ *  parametro: enderecoRegistro (long) Endereço do registro de dados associado.
+ *  retorno: (void) Não retorna valor.
+ */
 void inserirEmFolhaOrdenado(ArvoreBPlus *arv, Pagina *folha, const void *chave, long enderecoRegistro) {
     int i = folha->qtdElementos - 1;
     unsigned char bufChave[TAM_MAX_CHAVE];
@@ -244,6 +330,15 @@ void inserirEmFolhaOrdenado(ArvoreBPlus *arv, Pagina *folha, const void *chave, 
     folha->qtdElementos++;
 }
 
+/**
+ *  Insere de forma ordenada uma chave e o ponteiro para o filho direito em um nó interno.
+ * 
+ *  parametro: arv (ArvoreBPlus*) Ponteiro para a estrutura da árvore.
+ *  parametro: interno (Pagina*) Ponteiro para o nó interno onde a inserção ocorrerá.
+ *  parametro: chave (const void*) Ponteiro para a chave a ser inserida.
+ *  parametro: filhoDireito (long) Endereço do filho direito associado a esta chave.
+ *  retorno: (void) Não retorna valor.
+ */
 void inserirEmInternoOrdenado(ArvoreBPlus *arv, Pagina *interno, const void *chave, long filhoDireito) {
     int i = interno->qtdElementos - 1;
     unsigned char bufChave[TAM_MAX_CHAVE];
@@ -267,6 +362,13 @@ void inserirEmInternoOrdenado(ArvoreBPlus *arv, Pagina *interno, const void *cha
     interno->qtdElementos++;
 }
 
+/**
+ *  Realiza a divisão (split) de uma página folha que está cheia (overflow).
+ * 
+ *  parametro: arv (ArvoreBPlus*) Ponteiro para a estrutura da árvore.
+ *  parametro: folha (Pagina*) Ponteiro para a página folha a ser dividida.
+ *  retorno: (ResultadoSplit) Estrutura contendo o resultado da divisão, incluindo a chave promovida.
+ */
 ResultadoSplit splitFolha(ArvoreBPlus *arv, Pagina *folha) {
     ResultadoSplit res;
     res.houveSplit = true;
@@ -299,6 +401,13 @@ ResultadoSplit splitFolha(ArvoreBPlus *arv, Pagina *folha) {
     return res;
 }
 
+/**
+ *  Realiza a divisão (split) de um nó interno que está cheio (overflow).
+ * 
+ *  parametro: arv (ArvoreBPlus*) Ponteiro para a estrutura da árvore.
+ *  parametro: interno (Pagina*) Ponteiro para o nó interno a ser dividido.
+ *  retorno: (ResultadoSplit) Estrutura contendo o resultado da divisão e a chave promovida.
+ */
 ResultadoSplit splitInterno(ArvoreBPlus *arv, Pagina *interno) {
     ResultadoSplit res;
     res.houveSplit = true;
@@ -334,6 +443,15 @@ ResultadoSplit splitInterno(ArvoreBPlus *arv, Pagina *interno) {
     return res;
 }
 
+/**
+ *  Cria uma nova raiz para a árvore quando o nó raiz atual sofre split.
+ * 
+ *  parametro: arv (ArvoreBPlus*) Ponteiro para a estrutura da árvore.
+ *  parametro: filhoEsquerdo (long) Endereço da raiz antiga que virou o filho esquerdo.
+ *  parametro: chaveBuf (const unsigned char*) Buffer contendo a chave promovida.
+ *  parametro: filhoDireito (long) Endereço da nova página criada no split (filho direito).
+ *  retorno: (void) Não retorna valor.
+ */
 void criarNovaRaiz(ArvoreBPlus *arv, long filhoEsquerdo, const unsigned char *chaveBuf, long filhoDireito) {
     Pagina novaRaiz;
     novaRaiz.enderecoProprio = alocarPagina(arv);
@@ -350,6 +468,14 @@ void criarNovaRaiz(ArvoreBPlus *arv, long filhoEsquerdo, const unsigned char *ch
     arv->enderecoRaiz = novaRaiz.enderecoProprio;
 }
 
+/**
+ *  Insere uma nova chave e seu endereço de registro na árvore B+.
+ * 
+ *  parametro: arv (ArvoreBPlus*) Ponteiro para a estrutura da árvore.
+ *  parametro: chave (const void*) Ponteiro para a chave a ser inserida.
+ *  parametro: enderecoRegistroRh (long) Endereço do registro de dados associado a essa chave.
+ *  retorno: (bool) True se inserido com sucesso, False se a chave já existir.
+ */
 bool inserirChave(ArvoreBPlus *arv, const void *chave, long enderecoRegistroRh) {
     if (buscarChave(arv, chave, NULL))
         return false;
@@ -396,6 +522,14 @@ bool inserirChave(ArvoreBPlus *arv, const void *chave, long enderecoRegistroRh) 
     return true;
 }
 
+/**
+ *  Remove uma chave de uma página folha.
+ * 
+ *  parametro: arv (ArvoreBPlus*) Ponteiro para a estrutura da árvore.
+ *  parametro: folha (Pagina*) Ponteiro para a folha de onde a chave será removida.
+ *  parametro: chave (const void*) Ponteiro para a chave a ser removida.
+ *  retorno: (void) Não retorna valor.
+ */
 void removerDeFolha(ArvoreBPlus *arv, Pagina *folha, const void *chave) {
     int pos = -1;
     for (int i = 0; i < folha->qtdElementos; i++)
@@ -419,6 +553,13 @@ void removerDeFolha(ArvoreBPlus *arv, Pagina *folha, const void *chave) {
     folha->qtdElementos--;
 }
 
+/**
+ *  Remove uma chave e o respectivo filho de um nó interno, dado um índice.
+ * 
+ *  parametro: interno (Pagina*) Ponteiro para o nó interno.
+ *  parametro: pos (int) Índice da chave a ser removida.
+ *  retorno: (void) Não retorna valor.
+ */
 void removerDeInterno(Pagina *interno, int pos) {
     for (int i = pos; i < interno->qtdElementos - 1; i++)
     {
@@ -431,6 +572,16 @@ void removerDeInterno(Pagina *interno, int pos) {
     interno->qtdElementos--;
 }
 
+/**
+ *  Tenta resolver underflow emprestando um elemento da página irmã à esquerda.
+ * 
+ *  parametro: arv (ArvoreBPlus*) Ponteiro para a estrutura da árvore.
+ *  parametro: atual (Pagina*) A página que está em underflow.
+ *  parametro: esq (Pagina*) A página irmã imediatamente à esquerda.
+ *  parametro: pai (Pagina*) O nó pai de ambas as páginas.
+ *  parametro: idxNoPai (int) O índice que aponta para a página atual no nó pai.
+ *  retorno: (bool) True se o empréstimo foi bem-sucedido, False caso a página esquerda não tenha elementos suficientes.
+ */
 bool emprestarDaEsquerda(ArvoreBPlus *arv, Pagina *atual, Pagina *esq, Pagina *pai, int idxNoPai) {
     if (esq->qtdElementos <= MIN_CHAVES)
         return false;
@@ -470,6 +621,16 @@ bool emprestarDaEsquerda(ArvoreBPlus *arv, Pagina *atual, Pagina *esq, Pagina *p
     return true;
 }
 
+/**
+ *  Tenta resolver underflow emprestando um elemento da página irmã à direita.
+ * 
+ *  parametro: arv (ArvoreBPlus*) Ponteiro para a estrutura da árvore.
+ *  parametro: atual (Pagina*) A página que está em underflow.
+ *  parametro: dir (Pagina*) A página irmã imediatamente à direita.
+ *  parametro: pai (Pagina*) O nó pai de ambas as páginas.
+ *  parametro: idxNoPai (int) O índice que aponta para a página atual no nó pai.
+ *  retorno: (bool) True se o empréstimo foi bem-sucedido, False caso a página direita não tenha elementos suficientes.
+ */
 bool emprestarDaDireita(ArvoreBPlus *arv, Pagina *atual, Pagina *dir, Pagina *pai, int idxNoPai) {
     if (dir->qtdElementos <= MIN_CHAVES)
         return false;
@@ -509,6 +670,16 @@ bool emprestarDaDireita(ArvoreBPlus *arv, Pagina *atual, Pagina *dir, Pagina *pa
     return true;
 }
 
+/**
+ *  Funde (merge) duas páginas irmãs em uma só para resolver underflow de forma definitiva.
+ * 
+ *  parametro: arv (ArvoreBPlus*) Ponteiro para a estrutura da árvore.
+ *  parametro: esq (Pagina*) A página da esquerda (onde os elementos serão acumulados).
+ *  parametro: dir (Pagina*) A página da direita (cujos elementos serão movidos e ela depois ficará vazia/inutilizada).
+ *  parametro: pai (Pagina*) O nó pai de ambas as páginas.
+ *  parametro: idxPaiEsq (int) O índice no pai correspondente à chave que separa as duas páginas.
+ *  retorno: (void) Não retorna valor.
+ */
 void fundirPaginas(ArvoreBPlus *arv, Pagina *esq, Pagina *dir, Pagina *pai, int idxPaiEsq) {
     if (dir->ehFolha)
     {
@@ -537,6 +708,16 @@ void fundirPaginas(ArvoreBPlus *arv, Pagina *esq, Pagina *dir, Pagina *pai, int 
     removerDeInterno(pai, idxPaiEsq);
 }
 
+/**
+ *  Tenta tratar o underflow subindo os níveis da árvore e realizando empréstimos ou fusões.
+ * 
+ *  parametro: arv (ArvoreBPlus*) Ponteiro para a estrutura da árvore.
+ *  parametro: atual (Pagina*) Ponteiro para a página inicial que está em underflow.
+ *  parametro: nivel (int) O nível atual na pilha de percurso.
+ *  parametro: pilhaEnderecos (long[]) Pilha de endereços visitados na descida.
+ *  parametro: pilhaIndices (int[]) Pilha de índices seguidos na descida.
+ *  retorno: (bool) Retorna true após terminar as reestruturações.
+ */
 bool tratarUnderflow(ArvoreBPlus *arv, Pagina *atual, int nivel, long pilhaEnderecos[], int pilhaIndices[]) {
     while (nivel >= 0)
     {
@@ -606,6 +787,16 @@ bool tratarUnderflow(ArvoreBPlus *arv, Pagina *atual, int nivel, long pilhaEnder
     return true;
 }
 
+/**
+ *  Trata o overflow quando um nó excede a capacidade máxima estourando splits até a raiz.
+ * 
+ *  parametro: arv (ArvoreBPlus*) Ponteiro para a estrutura da árvore.
+ *  parametro: folha (Pagina*) A folha inicial que extrapolou o limite.
+ *  parametro: folhaEnd (long) O endereço da folha.
+ *  parametro: altura (int) A altura percorrida.
+ *  parametro: pilhaEnderecos (long[]) A pilha de endereços visitados para propagar o overflow para os pais.
+ *  retorno: (void) Não retorna valor.
+ */
 void tratarOverflow(ArvoreBPlus *arv, Pagina *folha, long folhaEnd, int altura, long pilhaEnderecos[]) {
     // Inicia o processo quebrando a folha que estourou o limite
     ResultadoSplit res = splitFolha(arv, folha);
@@ -643,6 +834,13 @@ void tratarOverflow(ArvoreBPlus *arv, Pagina *folha, long folhaEnd, int altura, 
     }
 }
 
+/**
+ *  Remove uma chave e seu respectivo registro da árvore B+.
+ * 
+ *  parametro: arv (ArvoreBPlus*) Ponteiro para a estrutura da árvore.
+ *  parametro: chave (const void*) Ponteiro para a chave a ser removida.
+ *  retorno: (bool) True se a chave foi encontrada e removida, False se não existir na árvore.
+ */
 bool removerChave(ArvoreBPlus *arv, const void *chave) {
     if (arv->enderecoRaiz == -1)
         return false;
@@ -681,6 +879,16 @@ bool removerChave(ArvoreBPlus *arv, const void *chave) {
     return tratarUnderflow(arv, &folha, altura - 1, pilhaEnderecos, pilhaIndices);
 }
 
+/**
+ *  Busca todas as chaves dentro de um intervalo fechado [chaveA, chaveB] e aplica uma função de callback.
+ * 
+ *  parametro: arv (ArvoreBPlus*) Ponteiro para a estrutura da árvore.
+ *  parametro: chaveA (const void*) Ponteiro para a chave inferior do intervalo.
+ *  parametro: chaveB (const void*) Ponteiro para a chave superior do intervalo.
+ *  parametro: visitar (VisitarNo) Função de callback executada para cada chave encontrada.
+ *  parametro: contexto (void*) Um ponteiro para o contexto que será passado ao callback.
+ *  retorno: (void) Não retorna valor.
+ */
 void buscarIntervalo(ArvoreBPlus *arv, const void *chaveA, const void *chaveB, VisitarNo visitar, void *contexto) {
     if (arv->enderecoRaiz == -1)
         return;
@@ -712,6 +920,14 @@ void buscarIntervalo(ArvoreBPlus *arv, const void *chaveA, const void *chaveB, V
     }
 }
 
+/**
+ *  Imprime recursivamente o conteúdo dos nós da árvore (usado para depuração).
+ * 
+ *  parametro: arv (ArvoreBPlus*) Ponteiro para a estrutura da árvore.
+ *  parametro: endereco (long) Endereço do nó atual que está sendo visitado.
+ *  parametro: nivel (int) Nível de profundidade atual na árvore, usado para formatar a indentação.
+ *  retorno: (void) Não retorna valor.
+ */
 void imprimirNoRecursivo(ArvoreBPlus *arv, long endereco, int nivel) {
     if (endereco == -1)
         return;
@@ -742,6 +958,12 @@ void imprimirNoRecursivo(ArvoreBPlus *arv, long endereco, int nivel) {
     }
 }
 
+/**
+ *  Função principal de impressão da estrutura da árvore B+. Inicia a recursão pela raiz.
+ * 
+ *  parametro: arv (ArvoreBPlus*) Ponteiro para a estrutura da árvore.
+ *  retorno: (void) Não retorna valor.
+ */
 void imprimirEstruturaArvore(ArvoreBPlus *arv) {
     if (arv->enderecoRaiz == -1)
     {
